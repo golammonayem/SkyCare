@@ -7,11 +7,10 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
-const { db, initializeDatabase } = require('./database/init');
+const { db, initializeDatabase, dataDir } = require('./database/init');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
 const persistentUploadsDir = path.join(dataDir, 'uploads');
 
 if (!fs.existsSync(persistentUploadsDir)) {

@@ -4,10 +4,30 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
-// Use persistent storage on Render (when DATA_DIR is set), fallback to local database folder.
-const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+function resolveWritableDataDir() {
+  const requestedDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : null;
+  const candidates = [requestedDir, '/tmp/skycare-data', __dirname].filter(Boolean);
+
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.accessSync(dir, fs.constants.W_OK);
+      return { dir, requestedDir };
+    } catch (_) {
+      // Try next candidate.
+    }
+  }
+
+  throw new Error('No writable data directory available. Check DATA_DIR and service disk settings.');
+}
+
+const resolved = resolveWritableDataDir();
+const dataDir = resolved.dir;
+
+if (resolved.requestedDir && resolved.requestedDir !== dataDir) {
+  console.warn(`[SkyCare] DATA_DIR is not writable (${resolved.requestedDir}). Falling back to ${dataDir}.`);
 }
 
 const dbPath = path.join(dataDir, 'skycare.db');
@@ -367,4 +387,4 @@ function seedData() {
   console.log('✅ Database seeded with sample data');
 }
 
-module.exports = { db, initializeDatabase };
+module.exports = { db, initializeDatabase, dataDir };
