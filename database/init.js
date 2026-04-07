@@ -1,9 +1,23 @@
 
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 const path = require('path');
 
-const dbPath = path.join(__dirname, 'skycare.db');
+// Use persistent storage on Render (when DATA_DIR is set), fallback to local database folder.
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'skycare.db');
+const bundledDbPath = path.join(__dirname, 'skycare.db');
+
+// First boot on Render: preserve existing seeded/local data by copying bundled DB if persistent DB is missing.
+if (!fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
+  fs.copyFileSync(bundledDbPath, dbPath);
+}
+
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');

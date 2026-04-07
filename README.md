@@ -124,8 +124,21 @@ SkyCare/
 1. Push your code to GitHub
 2. Go to [render.com](https://render.com) → **New** → **Web Service**
 3. Connect your GitHub repo
-4. Render will auto-detect the `render.yaml` configuration
+4. Render will auto-detect the `render.yaml` Blueprint configuration
 5. Click **Deploy**
+
+### Render Compatibility Notes
+
+- Persistent storage is configured with a mounted disk at `/var/data`
+- SQLite database path is automatically mapped to: `/var/data/skycare.db`
+- On first Render boot, if `/var/data/skycare.db` does not exist, app copies your bundled `database/skycare.db` so current data is preserved
+- Avatar uploads are stored in `/var/data/uploads` and served from `/uploads/*`
+- Health endpoint for Render and keepalive: `/healthz`
+- Self-ping runs every 14 minutes (controlled by env `SELF_PING_ENABLED=true`)
+
+### Important Note About Free Sleep
+
+Render free web services may still sleep without external traffic. The internal self-ping helps keep the app active while running, but for guaranteed no-sleep behavior use an external uptime monitor (for example UptimeRobot) to ping `https://YOUR_RENDER_URL/healthz` every 14 minutes.
 
 ### Manual Deployment
 

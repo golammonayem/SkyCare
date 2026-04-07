@@ -1,10 +1,20 @@
-type: web
-plan: free
-env: node
-buildCommand: npm install
-startCommand: node server.js
-envVars:
-  - key: NODE_ENV
-    value: production
-  - key: PORT
-    value: 10000
+services:
+  - type: web
+    name: skycare
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: skycare-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: SELF_PING_ENABLED
+        value: "true"

@@ -1,5 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
@@ -8,10 +11,16 @@ const { db, initializeDatabase } = require('./database/init');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
+const persistentUploadsDir = path.join(dataDir, 'uploads');
+
+if (!fs.existsSync(persistentUploadsDir)) {
+  fs.mkdirSync(persistentUploadsDir, { recursive: true });
+}
 
 // Multer config for avatar uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'public/uploads')),
+  destination: (req, file, cb) => cb(null, persistentUploadsDir),
   filename: (req, file, cb) => cb(null, `avatar-${req.params.id}-${Date.now()}${path.extname(file.originalname)}`)
 });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
@@ -21,7 +30,12 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 }, fileFilt
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(persistentUploadsDir));
 initializeDatabase();
+
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ ok: true, timestamp: new Date().toISOString() });
+});
 
 // ═══════════════════════════════════════════
 // AUTH MIDDLEWARE
@@ -361,4 +375,27 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n🏥 SkyCare HMS running at http://localhost:${PORT}\n`);
+
+  const selfPingEnabled = String(process.env.SELF_PING_ENABLED || 'true').toLowerCase() === 'true';
+  const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `http://127.0.0.1:${PORT}`;
+
+  if (selfPingEnabled) {
+    const healthUrl = `${baseUrl.replace(/\/$/, '')}/healthz`;
+    const doPing = () => {
+      try {
+        const client = healthUrl.startsWith('https') ? https : http;
+        const request = client.get(healthUrl, { timeout: 8000 }, (res) => {
+          res.resume();
+        });
+        request.on('error', () => {});
+        request.on('timeout', () => request.destroy());
+      } catch (_) {
+        // Intentionally ignore keepalive ping errors.
+      }
+    };
+
+    // First ping shortly after boot, then every 14 minutes.
+    setTimeout(doPing, 30 * 1000);
+    setInterval(doPing, 14 * 60 * 1000);
+  }
 });
