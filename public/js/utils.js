@@ -97,6 +97,26 @@ function statusBadge(status) {
   return badgeHtml(status, map[status] || 'default');
 }
 
+function moduleCanRead(module) {
+  try {
+    return typeof Auth !== 'undefined' && Auth.canRead(module);
+  } catch (_) {
+    return false;
+  }
+}
+
+function moduleCanWrite(module) {
+  try {
+    return typeof Auth !== 'undefined' && Auth.canWrite(module);
+  } catch (_) {
+    return false;
+  }
+}
+
+function ifCanWrite(module, html) {
+  return moduleCanWrite(module) ? html : '';
+}
+
 /* Helper for search box with SVG icon */
 function searchBoxHtml(id, placeholder, oninput) {
   return `<div class="search-box"><span class="search-icon">${Icon('search', 15)}</span><input type="text" id="${id}" placeholder="${placeholder}" oninput="${oninput}"></div>`;

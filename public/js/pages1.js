@@ -2,36 +2,52 @@
 async function renderDashboard() {
   try {
     const data = await API.get('/api/dashboard');
-    const s = data.stats;
-    const cards = [
-      { icon:'users', val:s.totalPatients, lbl:'Total Patients' },
-      { icon:'stethoscope', val:s.totalDoctors, lbl:'Active Doctors' },
-      { icon:'bed', val:`${s.availableRooms}/${s.totalRooms}`, lbl:'Available Rooms' },
-      { icon:'clipboard', val:s.activeAdmissions, lbl:'Active Admissions' },
-      { icon:'calendar', val:s.todayAppointments, lbl:"Today's Appointments" },
-      { icon:'creditCard', val:s.pendingBills, lbl:'Pending Bills' },
-      { icon:'droplets', val:s.bloodUnits, lbl:'Blood Units Available' },
-      { icon:'usersRound', val:s.totalStaff, lbl:'Active Staff' },
-    ];
-    let html = `<div class="stats-grid">${cards.map(c => `
-      <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon">${Icon(c.icon, 22)}</div></div>
-      <div class="stat-card-value">${c.val}</div><div class="stat-card-label">${c.lbl}</div></div>`).join('')}</div>`;
+    const s = data.stats || {};
+    const cards = [];
 
-    html += `<div class="dashboard-grid">`;
-    html += `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('clipboard',16)} Recent Admissions</span></div><div class="panel-body">`;
-    html += buildTable([{key:'patient_name',label:'Patient'},{key:'room_number',label:'Room'},{key:'doctor_name',label:'Doctor'},{key:'status',label:'Status',render:v=>statusBadge(v)}], data.recentAdmissions, null);
-    html += `</div></div>`;
+    if (s.totalPatients !== undefined) cards.push({ icon:'users', val:s.totalPatients, lbl:'Total Patients' });
+    if (s.totalDoctors !== undefined) cards.push({ icon:'stethoscope', val:s.totalDoctors, lbl:'Active Doctors' });
+    if (s.availableRooms !== undefined && s.totalRooms !== undefined) cards.push({ icon:'bed', val:`${s.availableRooms}/${s.totalRooms}`, lbl:'Available Rooms' });
+    if (s.activeAdmissions !== undefined) cards.push({ icon:'clipboard', val:s.activeAdmissions, lbl:'Active Admissions' });
+    if (s.todayAppointments !== undefined) cards.push({ icon:'calendar', val:s.todayAppointments, lbl:"Today's Appointments" });
+    if (s.pendingBills !== undefined) cards.push({ icon:'creditCard', val:s.pendingBills, lbl:'Pending Bills' });
+    if (s.bloodUnits !== undefined) cards.push({ icon:'droplets', val:s.bloodUnits, lbl:'Blood Units Available' });
+    if (s.totalStaff !== undefined) cards.push({ icon:'usersRound', val:s.totalStaff, lbl:'Active Staff' });
+    if (s.totalUsers !== undefined) cards.push({ icon:'shield', val:s.totalUsers, lbl:'Total System Users' });
 
-    html += `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('calendar',16)} Today's Appointments</span></div><div class="panel-body">`;
-    html += buildTable([{key:'patient_name',label:'Patient'},{key:'doctor_name',label:'Doctor'},{key:'appointment_time',label:'Time'},{key:'status',label:'Status',render:v=>statusBadge(v)}], data.todayAppointments, null);
-    html += `</div></div>`;
+    let html = cards.length
+      ? `<div class="stats-grid">${cards.map(c => `
+        <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon">${Icon(c.icon, 22)}</div></div>
+        <div class="stat-card-value">${c.val}</div><div class="stat-card-label">${c.lbl}</div></div>`).join('')}</div>`
+      : `<div class="empty-state"><div class="empty-state-icon">${Icon('shield', 44)}</div><p class="empty-state-text">No dashboard widgets are available for your role.</p></div>`;
 
-    html += `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('droplets',16)} Blood Bank Summary</span></div><div class="panel-body" style="padding:16px;"><div class="blood-grid">`;
-    ['A+','A-','B+','B-','AB+','AB-','O+','O-'].forEach(g => {
-      const found = data.bloodSummary.find(b => b.blood_group === g);
-      html += `<div class="blood-card"><div class="blood-card-group">${g}</div><div class="blood-card-units">${found?found.total_units:0} units</div></div>`;
-    });
-    html += `</div></div></div></div>`;
+    const panels = [];
+    if (moduleCanRead('admissions')) {
+      let panel = `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('clipboard',16)} Recent Admissions</span></div><div class="panel-body">`;
+      panel += buildTable([{key:'patient_name',label:'Patient'},{key:'room_number',label:'Room'},{key:'doctor_name',label:'Doctor'},{key:'status',label:'Status',render:v=>statusBadge(v)}], data.recentAdmissions || [], null);
+      panel += `</div></div>`;
+      panels.push(panel);
+    }
+
+    if (moduleCanRead('appointments')) {
+      let panel = `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('calendar',16)} Today's Appointments</span></div><div class="panel-body">`;
+      panel += buildTable([{key:'patient_name',label:'Patient'},{key:'doctor_name',label:'Doctor'},{key:'appointment_time',label:'Time'},{key:'status',label:'Status',render:v=>statusBadge(v)}], data.todayAppointments || [], null);
+      panel += `</div></div>`;
+      panels.push(panel);
+    }
+
+    if (moduleCanRead('blood-donations')) {
+      const summary = data.bloodSummary || [];
+      let panel = `<div class="panel"><div class="panel-header"><span class="panel-title">${Icon('droplets',16)} Blood Bank Summary</span></div><div class="panel-body" style="padding:16px;"><div class="blood-grid">`;
+      ['A+','A-','B+','B-','AB+','AB-','O+','O-'].forEach(g => {
+        const found = summary.find(b => b.blood_group === g);
+        panel += `<div class="blood-card"><div class="blood-card-group">${g}</div><div class="blood-card-units">${found?found.total_units:0} units</div></div>`;
+      });
+      panel += `</div></div></div>`;
+      panels.push(panel);
+    }
+
+    if (panels.length) html += `<div class="dashboard-grid">${panels.join('')}</div>`;
     document.getElementById('pageContent').innerHTML = html;
   } catch (e) { showToast('Failed to load dashboard: ' + e.message, 'error'); }
 }
@@ -41,11 +57,11 @@ async function renderDepartments() {
   try {
     const depts = await API.get('/api/departments');
     let html = `<div class="section-header"><h3 class="section-title">All Departments</h3><div class="section-actions">
-      <button class="btn btn-primary" onclick="showDepartmentForm()">${Icon('plus',14)} Add Department</button></div></div>`;
+      ${ifCanWrite('departments', `<button class="btn btn-primary" onclick="showDepartmentForm()">${Icon('plus',14)} Add Department</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'head_doctor_name',label:'Head Doctor'}],
       depts,
-      (row) => `${editBtn(`showDepartmentForm(${row.id})`)}${deleteBtn(`deleteDepartment(${row.id})`)}`
+      moduleCanWrite('departments') ? (row) => `${editBtn(`showDepartmentForm(${row.id})`)}${deleteBtn(`deleteDepartment(${row.id})`)}` : null
     );
     document.getElementById('pageContent').innerHTML = html;
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
@@ -80,7 +96,7 @@ async function renderDoctors() {
     const doctors = await API.get('/api/doctors');
     let html = `<div class="section-header"><h3 class="section-title">All Doctors</h3><div class="section-actions">
       ${searchBoxHtml('doctorSearch','Search doctors...','filterDoctors()')}
-      <button class="btn btn-primary" onclick="showDoctorForm()">${Icon('plus',14)} Add Doctor</button></div></div>`;
+      ${ifCanWrite('doctors', `<button class="btn btn-primary" onclick="showDoctorForm()">${Icon('plus',14)} Add Doctor</button>`)}</div></div>`;
     html += `<div id="doctorsTable">${buildDoctorsTable(doctors)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
     window._allDoctors = doctors;
@@ -93,7 +109,7 @@ function buildDoctorsTable(doctors) {
      {key:'department_name',label:'Department'},{key:'phone',label:'Phone'},
      {key:'status',label:'Status',render:v=>statusBadge(v)}],
     doctors,
-    (row) => `${scheduleBtn(`showDoctorSchedule(${row.id})`)}${editBtn(`showDoctorForm(${row.id})`)}${deleteBtn(`deleteDoctor(${row.id})`)}`
+    (row) => `${scheduleBtn(`showDoctorSchedule(${row.id})`)}${moduleCanWrite('doctors') ? `${editBtn(`showDoctorForm(${row.id})`)}${deleteBtn(`deleteDoctor(${row.id})`)}` : ''}`
   );
 }
 
@@ -149,7 +165,7 @@ async function renderPatients() {
     const patients = await API.get('/api/patients');
     let html = `<div class="section-header"><h3 class="section-title">All Patients</h3><div class="section-actions">
       ${searchBoxHtml('patientSearch','Search by name or blood group...','filterPatients()')}
-      <button class="btn btn-primary" onclick="showPatientForm()">${Icon('plus',14)} Add Patient</button></div></div>`;
+      ${ifCanWrite('patients', `<button class="btn btn-primary" onclick="showPatientForm()">${Icon('plus',14)} Add Patient</button>`)}</div></div>`;
     html += `<div id="patientsTable">${buildPatientsTable(patients)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
     window._allPatients = patients;
@@ -161,7 +177,11 @@ function buildPatientsTable(patients) {
     [{key:'id',label:'ID'},{key:'name',label:'Name'},{key:'gender',label:'Gender'},{key:'blood_group',label:'Blood Group',render:v=>v?badgeHtml(v,'danger'):'-'},
      {key:'phone',label:'Phone'},{key:'date_of_birth',label:'DOB'}],
     patients,
-    (row) => `${viewBtn(`viewPatientHistory(${row.id})`,'History')}${editBtn(`showPatientForm(${row.id})`)}${deleteBtn(`deletePatient(${row.id})`)}`
+    (row) => {
+      const history = moduleCanRead('medical-records') ? viewBtn(`viewPatientHistory(${row.id})`,'History') : '';
+      const editAndDelete = moduleCanWrite('patients') ? `${editBtn(`showPatientForm(${row.id})`)}${deleteBtn(`deletePatient(${row.id})`)}` : '';
+      return `${history}${editAndDelete}`;
+    }
   );
 }
 
@@ -214,7 +234,7 @@ async function renderRooms() {
   try {
     const rooms = await API.get('/api/rooms');
     let html = `<div class="section-header"><h3 class="section-title">Room Management</h3><div class="section-actions">
-      <button class="btn btn-primary" onclick="showRoomForm()">${Icon('plus',14)} Add Room</button></div></div>`;
+      ${ifCanWrite('rooms', `<button class="btn btn-primary" onclick="showRoomForm()">${Icon('plus',14)} Add Room</button>`)}</div></div>`;
     html += `<div class="room-grid">`;
     rooms.forEach(r => {
       const cls = r.status.toLowerCase();
@@ -223,7 +243,7 @@ async function renderRooms() {
         <div class="room-card-type">${r.type} • Floor ${r.floor}</div>
         <div class="room-card-info"><span class="room-card-beds">${r.occupied_beds}/${r.capacity} beds</span>${statusBadge(r.status)}</div>
         <div style="margin-top:12px;display:flex;gap:6px">
-          ${editBtn(`showRoomForm(${r.id})`)}${deleteBtn(`deleteRoom(${r.id})`)}
+          ${moduleCanWrite('rooms') ? `${editBtn(`showRoomForm(${r.id})`)}${deleteBtn(`deleteRoom(${r.id})`)}` : ''}
         </div></div>`;
     });
     html += `</div>`;

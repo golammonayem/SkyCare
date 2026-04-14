@@ -43,6 +43,22 @@ const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+const SEED_PASSWORDS = {
+  admin: process.env.SKYCARE_ADMIN_PASSWORD || 'SkyAdmin#2026',
+  'dr.ayesha': process.env.SKYCARE_DR_AYESHA_PASSWORD || 'DrAyesha#2026',
+  'dr.rafi': process.env.SKYCARE_DR_RAFI_PASSWORD || 'DrRafi#2026',
+  'nurse.anwar': process.env.SKYCARE_NURSE_ANWAR_PASSWORD || 'NurseAnwar#2026',
+  'staff.belal': process.env.SKYCARE_STAFF_BELAL_PASSWORD || 'StaffBelal#2026'
+};
+
+const LEGACY_WEAK_PASSWORDS = {
+  admin: 'admin123',
+  'dr.ayesha': 'doctor123',
+  'dr.rafi': 'doctor123',
+  'nurse.anwar': 'nurse123',
+  'staff.belal': 'staff123'
+};
+
 function initializeDatabase() {
   db.exec(`
     -- ═══ AUTH TABLES ═══
@@ -247,6 +263,7 @@ function initializeDatabase() {
   `);
 
   seedUsers();
+  resetInsecureDefaultPasswords();
   seedData();
 
   // Migration: add avatar_url column if missing (for existing databases)
@@ -261,12 +278,38 @@ function seedUsers() {
   console.log('🔐 Seeding user accounts...');
   const ins = db.prepare('INSERT INTO users (username, password_hash, full_name, email, role) VALUES (?,?,?,?,?)');
   const hash = (pw) => bcrypt.hashSync(pw, 10);
-  ins.run('admin', hash('admin123'), 'System Administrator', 'admin@skycare.com', 'Admin');
-  ins.run('dr.ayesha', hash('doctor123'), 'Dr. Ayesha Rahman', 'ayesha@skycare.com', 'Senior Doctor');
-  ins.run('dr.rafi', hash('doctor123'), 'Dr. Rafi Ahmed', 'rafi@skycare.com', 'Junior Doctor');
-  ins.run('nurse.anwar', hash('nurse123'), 'Anwar Hossain', 'anwar@skycare.com', 'Nurse');
-  ins.run('staff.belal', hash('staff123'), 'Belal Ahmed', 'belal@skycare.com', 'Staff');
+  ins.run('admin', hash(SEED_PASSWORDS.admin), 'System Administrator', 'admin@skycare.com', 'Admin');
+  ins.run('dr.ayesha', hash(SEED_PASSWORDS['dr.ayesha']), 'Dr. Ayesha Rahman', 'ayesha@skycare.com', 'Senior Doctor');
+  ins.run('dr.rafi', hash(SEED_PASSWORDS['dr.rafi']), 'Dr. Rafi Ahmed', 'rafi@skycare.com', 'Junior Doctor');
+  ins.run('nurse.anwar', hash(SEED_PASSWORDS['nurse.anwar']), 'Anwar Hossain', 'anwar@skycare.com', 'Nurse');
+  ins.run('staff.belal', hash(SEED_PASSWORDS['staff.belal']), 'Belal Ahmed', 'belal@skycare.com', 'Staff');
   console.log('✅ Users seeded');
+}
+
+function resetInsecureDefaultPasswords() {
+  const selectUser = db.prepare('SELECT id, password_hash FROM users WHERE username = ?');
+  const updatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+  const deleteSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?');
+  const updatedUsers = [];
+
+  for (const [username, weakPassword] of Object.entries(LEGACY_WEAK_PASSWORDS)) {
+    const user = selectUser.get(username);
+    if (!user) continue;
+
+    if (!bcrypt.compareSync(weakPassword, user.password_hash)) {
+      continue;
+    }
+
+    const nextPassword = SEED_PASSWORDS[username];
+    updatePassword.run(bcrypt.hashSync(nextPassword, 10), user.id);
+    deleteSessions.run(user.id);
+    updatedUsers.push(username);
+  }
+
+  if (updatedUsers.length) {
+    console.warn(`[SkyCare] Reset weak default passwords for: ${updatedUsers.join(', ')}.`);
+    console.warn('[SkyCare] Set SKYCARE_*_PASSWORD environment variables in production.');
+  }
 }
 
 function seedData() {

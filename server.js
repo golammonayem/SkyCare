@@ -56,30 +56,37 @@ function auth(req, res, next) {
 const PERMS = {
   'Admin': { modules: '*' },
   'Senior Doctor': {
-    read: ['dashboard','departments','doctors','patients','rooms','admissions','medical-records','appointments','billing','blood-donations'],
-    write: ['patients','admissions','medical-records','appointments']
-  },
-  'Junior Doctor': {
-    read: ['dashboard','departments','doctors','patients','rooms','admissions','medical-records','appointments'],
+    read: ['dashboard','departments','doctors','patients','admissions','medical-records','appointments'],
     write: ['medical-records','appointments']
   },
+  'Junior Doctor': {
+    read: ['dashboard','doctors','patients','medical-records','appointments'],
+    write: ['medical-records']
+  },
   'Nurse': {
-    read: ['dashboard','departments','doctors','patients','rooms','admissions','medical-records','appointments','blood-donations'],
-    write: ['rooms','admissions','blood-donations']
+    read: ['dashboard','doctors','patients','rooms','admissions','blood-donations'],
+    write: ['admissions','blood-donations']
   },
   'Staff': {
-    read: ['dashboard','patients','appointments','staff','staff-duties','billing'],
+    read: ['dashboard','patients','admissions','billing'],
     write: ['billing']
   }
 };
 
+function roleHasAccess(role, module, action = 'read') {
+  const p = PERMS[role];
+  if (!p) return false;
+  if (p.modules === '*') return true;
+  const readable = [...(p.read || []), ...(p.write || [])];
+  const writable = p.write || [];
+  return action === 'write' ? writable.includes(module) : readable.includes(module);
+}
+
 function can(module, action = 'read') {
   return (req, res, next) => {
-    const p = PERMS[req.user.role];
-    if (!p) return res.status(403).json({ error: 'Access denied' });
-    if (p.modules === '*') return next();
-    const allowed = action === 'read' ? [...(p.read || []), ...(p.write || [])] : (p.write || []);
-    if (!allowed.includes(module)) return res.status(403).json({ error: 'Access denied for your role' });
+    if (!roleHasAccess(req.user.role, module, action)) {
+      return res.status(403).json({ error: 'Access denied for your role' });
+    }
     next();
   };
 }
@@ -148,28 +155,57 @@ app.put('/api/auth/password', auth, (req, res) => {
 // ═══════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════
-app.get('/api/dashboard', auth, (req, res) => {
+app.get('/api/dashboard', auth, can('dashboard', 'read'), (req, res) => {
   try {
-    const stats = {
-      totalPatients: db.prepare('SELECT COUNT(*) as c FROM patients').get().c,
-      totalDoctors: db.prepare("SELECT COUNT(*) as c FROM doctors WHERE status='Active'").get().c,
-      availableRooms: db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='Available'").get().c,
-      totalRooms: db.prepare('SELECT COUNT(*) as c FROM rooms').get().c,
-      activeAdmissions: db.prepare("SELECT COUNT(*) as c FROM admissions WHERE status='Admitted'").get().c,
-      todayAppointments: db.prepare("SELECT COUNT(*) as c FROM appointments WHERE appointment_date=date('now')").get().c,
-      pendingBills: db.prepare("SELECT COUNT(*) as c FROM billing WHERE status IN ('Pending','Partial')").get().c,
-      bloodUnits: db.prepare("SELECT COALESCE(SUM(units),0) as c FROM blood_donations WHERE status='Available'").get().c,
-      totalStaff: db.prepare("SELECT COUNT(*) as c FROM staff WHERE status='Active'").get().c,
-      totalUsers: db.prepare('SELECT COUNT(*) as c FROM users').get().c,
-    };
-    const recentAdmissions = db.prepare(`SELECT a.*, p.name as patient_name, r.room_number, d.name as doctor_name
-      FROM admissions a LEFT JOIN patients p ON a.patient_id=p.id LEFT JOIN rooms r ON a.room_id=r.id LEFT JOIN doctors d ON a.doctor_id=d.id
-      ORDER BY a.admit_date DESC LIMIT 5`).all();
-    const todayAppointments = db.prepare(`SELECT ap.*, p.name as patient_name, d.name as doctor_name
-      FROM appointments ap LEFT JOIN patients p ON ap.patient_id=p.id LEFT JOIN doctors d ON ap.doctor_id=d.id
-      WHERE ap.appointment_date=date('now') ORDER BY ap.appointment_time`).all();
-    const bloodSummary = db.prepare(`SELECT blood_group, COALESCE(SUM(units),0) as total_units
-      FROM blood_donations WHERE status='Available' GROUP BY blood_group`).all();
+    const canRead = (module) => roleHasAccess(req.user.role, module, 'read');
+    const stats = {};
+
+    if (canRead('patients')) {
+      stats.totalPatients = db.prepare('SELECT COUNT(*) as c FROM patients').get().c;
+    }
+    if (canRead('doctors')) {
+      stats.totalDoctors = db.prepare("SELECT COUNT(*) as c FROM doctors WHERE status='Active'").get().c;
+    }
+    if (canRead('rooms')) {
+      stats.availableRooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='Available'").get().c;
+      stats.totalRooms = db.prepare('SELECT COUNT(*) as c FROM rooms').get().c;
+    }
+    if (canRead('admissions')) {
+      stats.activeAdmissions = db.prepare("SELECT COUNT(*) as c FROM admissions WHERE status='Admitted'").get().c;
+    }
+    if (canRead('appointments')) {
+      stats.todayAppointments = db.prepare("SELECT COUNT(*) as c FROM appointments WHERE appointment_date=date('now')").get().c;
+    }
+    if (canRead('billing')) {
+      stats.pendingBills = db.prepare("SELECT COUNT(*) as c FROM billing WHERE status IN ('Pending','Partial')").get().c;
+    }
+    if (canRead('blood-donations')) {
+      stats.bloodUnits = db.prepare("SELECT COALESCE(SUM(units),0) as c FROM blood_donations WHERE status='Available'").get().c;
+    }
+    if (canRead('staff')) {
+      stats.totalStaff = db.prepare("SELECT COUNT(*) as c FROM staff WHERE status='Active'").get().c;
+    }
+    if (req.user.role === 'Admin') {
+      stats.totalUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+    }
+
+    const recentAdmissions = canRead('admissions')
+      ? db.prepare(`SELECT a.*, p.name as patient_name, r.room_number, d.name as doctor_name
+        FROM admissions a LEFT JOIN patients p ON a.patient_id=p.id LEFT JOIN rooms r ON a.room_id=r.id LEFT JOIN doctors d ON a.doctor_id=d.id
+        ORDER BY a.admit_date DESC LIMIT 5`).all()
+      : [];
+
+    const todayAppointments = canRead('appointments')
+      ? db.prepare(`SELECT ap.*, p.name as patient_name, d.name as doctor_name
+        FROM appointments ap LEFT JOIN patients p ON ap.patient_id=p.id LEFT JOIN doctors d ON ap.doctor_id=d.id
+        WHERE ap.appointment_date=date('now') ORDER BY ap.appointment_time`).all()
+      : [];
+
+    const bloodSummary = canRead('blood-donations')
+      ? db.prepare(`SELECT blood_group, COALESCE(SUM(units),0) as total_units
+        FROM blood_donations WHERE status='Available' GROUP BY blood_group`).all()
+      : [];
+
     res.json({ stats, recentAdmissions, todayAppointments, bloodSummary });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -346,7 +382,7 @@ registerCrud('staff-duties', 'staff_duties',
 );
 
 // Blood summary BEFORE generic CRUD :id route
-app.get('/api/blood-donations/summary', auth, (req, res) => {
+app.get('/api/blood-donations/summary', auth, can('blood-donations', 'read'), (req, res) => {
   try {
     res.json(db.prepare("SELECT blood_group, COALESCE(SUM(units),0) as total_units FROM blood_donations WHERE status='Available' GROUP BY blood_group").all());
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -356,7 +392,7 @@ registerCrud('blood-donations', 'blood_donations',
 );
 
 // Doctor Schedules
-app.get('/api/doctor-schedules/:doctorId', auth, (req, res) => {
+app.get('/api/doctor-schedules/:doctorId', auth, can('doctors', 'read'), (req, res) => {
   try {
     res.json(db.prepare('SELECT * FROM doctor_schedules WHERE doctor_id=? ORDER BY CASE day_of_week WHEN "Monday" THEN 1 WHEN "Tuesday" THEN 2 WHEN "Wednesday" THEN 3 WHEN "Thursday" THEN 4 WHEN "Friday" THEN 5 WHEN "Saturday" THEN 6 WHEN "Sunday" THEN 7 END').all(req.params.doctorId));
   } catch (e) { res.status(500).json({ error: e.message }); }

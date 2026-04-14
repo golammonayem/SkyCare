@@ -3,18 +3,18 @@ async function renderAdmissions() {
   try {
     const admissions = await API.get('/api/admissions');
     let html = `<div class="section-header"><h3 class="section-title">Admissions</h3><div class="section-actions">
-      <button class="btn btn-primary" onclick="showAdmissionForm()">${Icon('plus',14)} New Admission</button></div></div>`;
+      ${ifCanWrite('admissions', `<button class="btn btn-primary" onclick="showAdmissionForm()">${Icon('plus',14)} New Admission</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'room_number',label:'Room'},{key:'doctor_name',label:'Doctor'},
        {key:'admit_date',label:'Admitted',render:v=>v?v.split('T')[0]:'-'},{key:'discharge_date',label:'Discharged',render:v=>v?v.split('T')[0]:'—'},
        {key:'diagnosis',label:'Diagnosis'},{key:'status',label:'Status',render:v=>statusBadge(v)}],
       admissions,
-      (row) => {
+      moduleCanWrite('admissions') ? (row) => {
         let btns = '';
         if(row.status==='Admitted') btns += dischargeBtn(`dischargePatient(${row.id})`);
         btns += `${editBtn(`showAdmissionForm(${row.id})`)}${deleteBtn(`deleteAdmission(${row.id})`)}`;
         return btns;
-      }
+      } : null
     );
     document.getElementById('pageContent').innerHTML = html;
   } catch(e) { showToast('Error: '+e.message,'error'); }
@@ -63,7 +63,7 @@ async function renderMedicalRecords() {
     const records = await API.get('/api/medical-records');
     let html = `<div class="section-header"><h3 class="section-title">Medical Records</h3><div class="section-actions">
       ${searchBoxHtml('recordSearch','Search by patient or diagnosis...','filterRecords()')}
-      <button class="btn btn-primary" onclick="showRecordForm()">${Icon('plus',14)} Add Record</button></div></div>`;
+      ${ifCanWrite('medical-records', `<button class="btn btn-primary" onclick="showRecordForm()">${Icon('plus',14)} Add Record</button>`)}</div></div>`;
     html += `<div id="recordsTable">${buildRecordsTable(records)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
     window._allRecords = records;
@@ -75,7 +75,7 @@ function buildRecordsTable(records) {
     [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'doctor_name',label:'Doctor'},
      {key:'record_date',label:'Date',render:v=>v?v.split('T')[0]:'-'},{key:'diagnosis',label:'Diagnosis'},{key:'treatment',label:'Treatment'}],
     records,
-    (row) => `${viewBtn(`viewRecord(${row.id})`)}${editBtn(`showRecordForm(${row.id})`)}${deleteBtn(`deleteRecord(${row.id})`)}`
+    (row) => `${viewBtn(`viewRecord(${row.id})`)}${moduleCanWrite('medical-records') ? `${editBtn(`showRecordForm(${row.id})`)}${deleteBtn(`deleteRecord(${row.id})`)}` : ''}`
   );
 }
 
@@ -130,13 +130,13 @@ async function renderAppointments(){
   try{
     const appts = await API.get('/api/appointments');
     let html = `<div class="section-header"><h3 class="section-title">Appointments</h3><div class="section-actions">
-      <button class="btn btn-primary" onclick="showAppointmentForm()">${Icon('plus',14)} Book Appointment</button></div></div>`;
+      ${ifCanWrite('appointments', `<button class="btn btn-primary" onclick="showAppointmentForm()">${Icon('plus',14)} Book Appointment</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'doctor_name',label:'Doctor'},
        {key:'appointment_date',label:'Date'},{key:'appointment_time',label:'Time'},{key:'reason',label:'Reason'},
        {key:'status',label:'Status',render:v=>statusBadge(v)}],
       appts,
-      (row)=>`${editBtn(`showAppointmentForm(${row.id})`)}${deleteBtn(`deleteAppointment(${row.id})`)}`
+      moduleCanWrite('appointments') ? (row)=>`${editBtn(`showAppointmentForm(${row.id})`)}${deleteBtn(`deleteAppointment(${row.id})`)}` : null
     );
     document.getElementById('pageContent').innerHTML=html;
   }catch(e){showToast('Error: '+e.message,'error');}
@@ -171,14 +171,14 @@ async function renderBilling(){
   try{
     const bills=await API.get('/api/billing');
     let html=`<div class="section-header"><h3 class="section-title">Billing</h3><div class="section-actions">
-      <button class="btn btn-primary" onclick="showBillForm()">${Icon('plus',14)} New Bill</button></div></div>`;
+      ${ifCanWrite('billing', `<button class="btn btn-primary" onclick="showBillForm()">${Icon('plus',14)} New Bill</button>`)}</div></div>`;
     html+=buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'description',label:'Description'},
        {key:'total_amount',label:'Total (৳)',render:v=>`৳${Number(v||0).toLocaleString()}`},{key:'paid_amount',label:'Paid (৳)',render:v=>`৳${Number(v||0).toLocaleString()}`},
        {key:'payment_method',label:'Method'},{key:'billing_date',label:'Date',render:v=>v?v.split('T')[0]:'-'},
        {key:'status',label:'Status',render:v=>statusBadge(v)}],
       bills,
-      (row)=>`${editBtn(`showBillForm(${row.id})`)}${deleteBtn(`deleteBill(${row.id})`)}`
+      moduleCanWrite('billing') ? (row)=>`${editBtn(`showBillForm(${row.id})`)}${deleteBtn(`deleteBill(${row.id})`)}` : null
     );
     document.getElementById('pageContent').innerHTML=html;
   }catch(e){showToast('Error: '+e.message,'error');}
@@ -216,13 +216,13 @@ async function renderStaff(){
   try{
     const staff=await API.get('/api/staff');
     let html=`<div class="section-header"><h3 class="section-title">Staff</h3><div class="section-actions">
-      <button class="btn btn-secondary" onclick="renderDuties()">${Icon('calendar',14)} View Duty Roster</button>
-      <button class="btn btn-primary" onclick="showStaffForm()">${Icon('plus',14)} Add Staff</button></div></div>`;
+      ${moduleCanRead('staff-duties') ? `<button class="btn btn-secondary" onclick="renderDuties()">${Icon('calendar',14)} View Duty Roster</button>` : ''}
+      ${ifCanWrite('staff', `<button class="btn btn-primary" onclick="showStaffForm()">${Icon('plus',14)} Add Staff</button>`)}</div></div>`;
     html+=buildTable(
       [{key:'id',label:'ID'},{key:'name',label:'Name'},{key:'role',label:'Role'},{key:'department_name',label:'Department'},
        {key:'phone',label:'Phone'},{key:'hire_date',label:'Hired'},{key:'status',label:'Status',render:v=>statusBadge(v)}],
       staff,
-      (row)=>`${editBtn(`showStaffForm(${row.id})`)}${deleteBtn(`deleteStaffMember(${row.id})`)}`
+      moduleCanWrite('staff') ? (row)=>`${editBtn(`showStaffForm(${row.id})`)}${deleteBtn(`deleteStaffMember(${row.id})`)}` : null
     );
     document.getElementById('pageContent').innerHTML=html;
   }catch(e){showToast('Error: '+e.message,'error');}
@@ -256,12 +256,12 @@ async function renderDuties(){
     const duties=await API.get('/api/staff-duties');
     let html=`<div class="section-header"><h3 class="section-title">Duty Roster</h3><div class="section-actions">
       <button class="btn btn-secondary" onclick="renderStaff()">← Back to Staff</button>
-      <button class="btn btn-primary" onclick="showDutyForm()">${Icon('plus',14)} Assign Duty</button></div></div>`;
+      ${ifCanWrite('staff-duties', `<button class="btn btn-primary" onclick="showDutyForm()">${Icon('plus',14)} Assign Duty</button>`)}</div></div>`;
     html+=buildTable(
       [{key:'staff_name',label:'Staff'},{key:'shift',label:'Shift',render:v=>badgeHtml(v,v==='Morning'?'warning':v==='Afternoon'?'info':'default')},
        {key:'day_of_week',label:'Day'},{key:'assigned_area',label:'Area'}],
       duties,
-      (row)=>deleteBtn(`deleteDuty(${row.id})`)
+      moduleCanWrite('staff-duties') ? (row)=>deleteBtn(`deleteDuty(${row.id})`) : null
     );
     document.getElementById('pageContent').innerHTML=html;
   }catch(e){showToast('Error: '+e.message,'error');}
@@ -292,7 +292,7 @@ async function renderBloodBank(){
     const summary=await API.get('/api/blood-donations/summary');
     let html=`<div class="section-header"><h3 class="section-title">Blood Bank</h3><div class="section-actions">
       ${searchBoxHtml('bloodSearch','Search by blood group...','filterBlood()')}
-      <button class="btn btn-primary" onclick="showDonationForm()">${Icon('plus',14)} Add Donation</button></div></div>`;
+      ${ifCanWrite('blood-donations', `<button class="btn btn-primary" onclick="showDonationForm()">${Icon('plus',14)} Add Donation</button>`)}</div></div>`;
     html+=`<div class="blood-grid">`;
     ['A+','A-','B+','B-','AB+','AB-','O+','O-'].forEach(g=>{const f=summary.find(s=>s.blood_group===g);
       html+=`<div class="blood-card"><div class="blood-card-group">${g}</div><div class="blood-card-units">${f?f.total_units:0} units</div><div class="blood-card-label">available</div></div>`;
@@ -309,7 +309,7 @@ function buildBloodTable(donations){
      {key:'units',label:'Units'},{key:'donation_date',label:'Date'},{key:'expiry_date',label:'Expiry'},
      {key:'status',label:'Status',render:v=>statusBadge(v)}],
     donations,
-    (row)=>`${editBtn(`showDonationForm(${row.id})`)}${deleteBtn(`deleteDonation(${row.id})`)}`
+    moduleCanWrite('blood-donations') ? (row)=>`${editBtn(`showDonationForm(${row.id})`)}${deleteBtn(`deleteDonation(${row.id})`)}` : null
   );
 }
 

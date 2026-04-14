@@ -64,11 +64,19 @@ Open **http://localhost:3000** in your browser.
 
 | Username | Password | Role |
 |----------|----------|------|
-| `admin` | `admin123` | Admin |
-| `dr.ayesha` | `doctor123` | Senior Doctor |
-| `dr.rafi` | `doctor123` | Junior Doctor |
-| `nurse.anwar` | `nurse123` | Nurse |
-| `staff.belal` | `staff123` | Staff |
+| `admin` | `SkyAdmin#2026` | Admin |
+| `dr.ayesha` | `DrAyesha#2026` | Senior Doctor |
+| `dr.rafi` | `DrRafi#2026` | Junior Doctor |
+| `nurse.anwar` | `NurseAnwar#2026` | Nurse |
+| `staff.belal` | `StaffBelal#2026` | Staff |
+
+You can override these bootstrap passwords using environment variables:
+
+- `SKYCARE_ADMIN_PASSWORD`
+- `SKYCARE_DR_AYESHA_PASSWORD`
+- `SKYCARE_DR_RAFI_PASSWORD`
+- `SKYCARE_NURSE_ANWAR_PASSWORD`
+- `SKYCARE_STAFF_BELAL_PASSWORD`
 
 ---
 
