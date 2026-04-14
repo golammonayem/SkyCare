@@ -215,6 +215,13 @@ div.nav-admin-only.visible { display:block; }
 }
 .btn-logout:hover { background:rgba(239,68,68,0.08); color:var(--danger); border-color:rgba(239,68,68,0.3); }
 
+.btn-password {
+  padding:6px 12px; border-radius:var(--radius-full); font-size:12px; font-weight:600;
+  background:var(--bg-input); border:1px solid var(--border); color:var(--text-secondary);
+  display:flex; align-items:center; gap:5px; transition:all var(--transition-fast);
+}
+.btn-password:hover { background:var(--accent-light); color:var(--accent); border-color:rgba(37,99,235,0.35); }
+
 /* ── Page Content ── */
 .page-content { padding:24px; animation:fadeIn 0.3s ease; max-width:1400px; }
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
@@ -346,6 +353,23 @@ textarea.form-control { min-height:72px; resize:vertical; }
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 @media (max-width:480px) { .form-row { grid-template-columns:1fr; } }
 
+.password-field-wrap { position:relative; }
+.password-field-wrap .form-control { padding-right:40px; }
+.password-toggle-btn {
+  position:absolute; right:7px; top:50%; transform:translateY(-50%);
+  width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+  border-radius:var(--radius-full); color:var(--text-muted); border:1px solid transparent;
+  transition:all var(--transition-fast);
+}
+.password-toggle-btn:hover { background:var(--accent-light); color:var(--accent); }
+.password-toggle-btn.active { color:var(--accent); transform:translateY(-50%) scale(1.06); }
+.password-toggle-btn.animate { animation:eyePulse 0.22s ease; }
+@keyframes eyePulse {
+  0% { transform:translateY(-50%) scale(0.96); }
+  60% { transform:translateY(-50%) scale(1.09); }
+  100% { transform:translateY(-50%) scale(1); }
+}
+
 /* ── File Upload Zone ── */
 .upload-zone {
   border:2px dashed var(--border); border-radius:var(--radius-md); padding:24px;
@@ -449,5 +473,6 @@ textarea.form-control { min-height:72px; resize:vertical; }
   .stats-grid { grid-template-columns:1fr 1fr; }
   .room-grid { grid-template-columns:1fr; }
   .top-bar-right { gap:6px; }
+  .btn-password span { display:none; }
   .btn-logout span { display:none; }
 }

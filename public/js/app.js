@@ -129,6 +129,9 @@ function updateThemeIcon(theme) {
 
 /* ── Top Bar Icons ── */
 function injectTopBarIcons() {
+  // Change password button
+  const changePasswordBtn = document.getElementById('changePasswordBtn');
+  if (changePasswordBtn) changePasswordBtn.innerHTML = `${Icon('key', 16)}<span>Password</span>`;
   // Logout button
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) logoutBtn.innerHTML = `${Icon('logout', 16)}<span>Logout</span>`;
@@ -152,6 +155,79 @@ function closeMobileSidebar() {
   document.body.style.overflow = '';
 }
 
+/* ── Self Password Change ── */
+function toggleModalPassword(inputId, buttonEl) {
+  const input = document.getElementById(inputId);
+  if (!input || !buttonEl) return;
+
+  const shouldShow = input.type === 'password';
+  input.type = shouldShow ? 'text' : 'password';
+
+  buttonEl.classList.toggle('active', shouldShow);
+  buttonEl.setAttribute('aria-label', shouldShow ? 'Hide password' : 'Show password');
+  buttonEl.innerHTML = Icon(shouldShow ? 'eyeOff' : 'eye', 16);
+  buttonEl.classList.remove('animate');
+  void buttonEl.offsetWidth;
+  buttonEl.classList.add('animate');
+}
+
+function showChangePasswordModal() {
+  openModal('Change Your Password', `
+    <form id="passwordChangeForm" autocomplete="off">
+      <div class="form-group">
+        <label class="form-label">Current Password *</label>
+        <div class="password-field-wrap">
+          <input id="current_password" name="current_password" type="password" class="form-control" placeholder="Enter current password" autocomplete="current-password">
+          <button type="button" class="password-toggle-btn" onclick="toggleModalPassword('current_password', this)" aria-label="Show password">${Icon('eye', 16)}</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Password *</label>
+        <div class="password-field-wrap">
+          <input id="new_password" name="new_password" type="password" class="form-control" placeholder="Minimum 6 characters" autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="toggleModalPassword('new_password', this)" aria-label="Show password">${Icon('eye', 16)}</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Confirm New Password *</label>
+        <div class="password-field-wrap">
+          <input id="confirm_password" name="confirm_password" type="password" class="form-control" placeholder="Retype new password" autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="toggleModalPassword('confirm_password', this)" aria-label="Show password">${Icon('eye', 16)}</button>
+        </div>
+      </div>
+    </form>
+  `, async () => {
+    const data = getFormData('passwordChangeForm');
+    if (!data.current_password || !data.new_password || !data.confirm_password) {
+      showToast('All password fields are required', 'error');
+      return;
+    }
+    if (data.new_password.length < 6) {
+      showToast('New password must be at least 6 characters', 'error');
+      return;
+    }
+    if (data.current_password === data.new_password) {
+      showToast('New password must be different from current password', 'error');
+      return;
+    }
+    if (data.new_password !== data.confirm_password) {
+      showToast('New password and confirm password do not match', 'error');
+      return;
+    }
+
+    try {
+      await API.put('/api/auth/password', {
+        current_password: data.current_password,
+        new_password: data.new_password,
+      });
+      closeModal();
+      showToast('Password changed successfully', 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to change password', 'error');
+    }
+  });
+}
+
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', async () => {
   if (!Auth.guard()) return;
@@ -168,6 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('menuToggle').addEventListener('click', openMobileSidebar);
   document.getElementById('sidebarOverlay').addEventListener('click', closeMobileSidebar);
   document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  document.getElementById('changePasswordBtn').addEventListener('click', showChangePasswordModal);
   document.getElementById('modalClose').addEventListener('click', closeModal);
   document.getElementById('modalCancel').addEventListener('click', closeModal);
   document.getElementById('modalSave').addEventListener('click', () => { if (modalSaveHandler) modalSaveHandler(); });

@@ -27,6 +27,14 @@
     .form-input{width:100%;padding:12px 14px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;transition:all .2s;outline:none;font-family:inherit}
     .form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
     .form-input::placeholder{color:var(--text-muted)}
+    .password-wrap{position:relative}
+    .password-wrap .form-input{padding-right:44px}
+    .password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:none;border-radius:999px;background:transparent;color:var(--text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+    .password-toggle:hover{color:var(--accent);background:rgba(37,99,235,.1)}
+    .password-toggle svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .22s ease,opacity .22s ease}
+    .password-toggle.is-visible svg{transform:scale(1.08)}
+    .password-toggle.animate{animation:eyeTap .22s ease}
+    @keyframes eyeTap{0%{transform:translateY(-50%) scale(.95)}60%{transform:translateY(-50%) scale(1.08)}100%{transform:translateY(-50%) scale(1)}}
     .login-btn{width:100%;padding:13px;border:none;border-radius:10px;background:var(--gradient);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;box-shadow:0 4px 16px rgba(37,99,235,.25);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px}
     .login-btn:hover{box-shadow:0 6px 24px rgba(37,99,235,.35);transform:translateY(-1px)}
     .login-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
@@ -64,7 +72,12 @@
         </div>
         <div class="form-group">
           <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="password" placeholder="Enter password" autocomplete="current-password" required>
+          <div class="password-wrap">
+            <input type="password" class="form-input" id="password" placeholder="Enter password" autocomplete="current-password" required>
+            <button type="button" class="password-toggle" id="passwordToggle" onclick="toggleLoginPassword()" aria-label="Show password">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+          </div>
         </div>
         <button type="submit" class="login-btn" id="loginBtn">
           <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
@@ -81,8 +94,11 @@
     const theme=localStorage.getItem('skycare_theme')||'light';
     document.documentElement.setAttribute('data-theme',theme);
     updateBtn(theme);
+    const eyeIcon='<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    const eyeOffIcon='<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.94 10.94 0 0112 20c-7 0-11-8-11-8a21.77 21.77 0 015.08-5.94"></path><path d="M9.9 4.24A10.94 10.94 0 0112 4c7 0 11 8 11 8a21.77 21.77 0 01-3.17 4.58"></path><line x1="1" y1="1" x2="23" y2="23"></line><path d="M14.12 14.12a3 3 0 11-4.24-4.24"></path></svg>';
     function toggleTheme(){const c=document.documentElement.getAttribute('data-theme');const n=c==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('skycare_theme',n);updateBtn(n);}
     function updateBtn(t){document.getElementById('themeBtn').innerHTML=t==='dark'?'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>':'<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';}
+    function toggleLoginPassword(){const input=document.getElementById('password');const btn=document.getElementById('passwordToggle');const show=input.type==='password';input.type=show?'text':'password';btn.setAttribute('aria-label',show?'Hide password':'Show password');btn.classList.toggle('is-visible',show);btn.classList.remove('animate');void btn.offsetWidth;btn.classList.add('animate');btn.innerHTML=show?eyeOffIcon:eyeIcon;}
     async function handleLogin(e){
       e.preventDefault();const btn=document.getElementById('loginBtn');const errBox=document.getElementById('loginError');
       btn.disabled=true;btn.innerHTML='<div style="width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></div> Signing in...';
