@@ -1,8 +1,180 @@
+function downloadAdmissionsReport() {
+  downloadReportPdf({
+    title: 'Admissions Report',
+    subtitle: 'Admission and discharge tracking summary',
+    filename: 'admissions-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'patient_name', label: 'Patient' },
+      { key: 'room_number', label: 'Room' },
+      { key: 'doctor_name', label: 'Doctor' },
+      { key: 'admit_date', label: 'Admit Date' },
+      { key: 'discharge_date', label: 'Discharge Date' },
+      { key: 'diagnosis', label: 'Diagnosis' },
+      { key: 'status', label: 'Status' }
+    ],
+    rows: window._allAdmissions || []
+  });
+}
+
+function downloadMedicalRecordsReport() {
+  downloadReportPdf({
+    title: 'Medical Records Report',
+    subtitle: 'Clinical diagnosis and treatment records',
+    filename: 'medical-records-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'patient_name', label: 'Patient' },
+      { key: 'doctor_name', label: 'Doctor' },
+      { key: 'record_date', label: 'Record Date' },
+      { key: 'diagnosis', label: 'Diagnosis' },
+      { key: 'treatment', label: 'Treatment' }
+    ],
+    rows: window._allRecords || []
+  });
+}
+
+function downloadAppointmentsReport() {
+  downloadReportPdf({
+    title: 'Appointments Report',
+    subtitle: 'Appointment schedule and status overview',
+    filename: 'appointments-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'patient_name', label: 'Patient' },
+      { key: 'doctor_name', label: 'Doctor' },
+      { key: 'appointment_date', label: 'Date' },
+      { key: 'appointment_time', label: 'Time' },
+      { key: 'status', label: 'Status' },
+      { key: 'reason', label: 'Reason' }
+    ],
+    rows: window._allAppointments || []
+  });
+}
+
+function downloadBillingReport() {
+  downloadReportPdf({
+    title: 'Billing Report',
+    subtitle: 'Billing totals, payments, and dues',
+    filename: 'billing-report.pdf',
+    columns: [
+      { key: 'id', label: 'Bill ID' },
+      { key: 'patient_name', label: 'Patient' },
+      { key: 'description', label: 'Description' },
+      { key: 'total_amount', label: 'Total Amount', pdfRender: (v) => asCurrency(v) },
+      { key: 'paid_amount', label: 'Paid Amount', pdfRender: (v) => asCurrency(v) },
+      { key: 'payment_method', label: 'Method' },
+      { key: 'status', label: 'Status' },
+      { key: 'billing_date', label: 'Billing Date' }
+    ],
+    rows: window._allBills || []
+  });
+}
+
+function downloadBillInvoice(billId) {
+  const bill = (window._allBills || []).find((item) => Number(item.id) === Number(billId));
+  if (!bill) {
+    showToast('Unable to find bill for invoice download', 'error');
+    return;
+  }
+  downloadBillingInvoicePdf(bill);
+}
+
+function downloadStaffReport() {
+  downloadReportPdf({
+    title: 'Staff Report',
+    subtitle: 'Staff directory and current status',
+    filename: 'staff-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Name' },
+      { key: 'role', label: 'Role' },
+      { key: 'department_name', label: 'Department' },
+      { key: 'phone', label: 'Phone' },
+      { key: 'hire_date', label: 'Hire Date' },
+      { key: 'status', label: 'Status' }
+    ],
+    rows: window._allStaff || []
+  });
+}
+
+function downloadDutiesReport() {
+  downloadReportPdf({
+    title: 'Duty Roster Report',
+    subtitle: 'Staff duty assignments by shift and day',
+    filename: 'staff-duty-roster-report.pdf',
+    columns: [
+      { key: 'staff_name', label: 'Staff' },
+      { key: 'staff_role', label: 'Role' },
+      { key: 'shift', label: 'Shift' },
+      { key: 'day_of_week', label: 'Day' },
+      { key: 'assigned_area', label: 'Assigned Area' }
+    ],
+    rows: window._allDuties || []
+  });
+}
+
+function downloadBloodBankReport() {
+  downloadReportPdf({
+    title: 'Blood Bank Report',
+    subtitle: 'Blood inventory and donation status',
+    filename: 'blood-bank-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'donor_name', label: 'Donor' },
+      { key: 'blood_group', label: 'Blood Group' },
+      { key: 'units', label: 'Units' },
+      { key: 'donation_date', label: 'Donation Date' },
+      { key: 'expiry_date', label: 'Expiry Date' },
+      { key: 'status', label: 'Status' }
+    ],
+    rows: window._allDonations || []
+  });
+}
+
+function downloadUsersReport() {
+  downloadReportPdf({
+    title: 'User Accounts Report',
+    subtitle: 'System users and role assignments',
+    filename: 'users-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'username', label: 'Username' },
+      { key: 'full_name', label: 'Full Name' },
+      { key: 'role', label: 'Role' },
+      { key: 'email', label: 'Email' },
+      { key: 'status', label: 'Status' },
+      { key: 'last_login', label: 'Last Login' }
+    ],
+    rows: window._allUsers || []
+  });
+}
+
+function downloadAuditLogReport() {
+  downloadReportPdf({
+    title: 'Audit Activity Report',
+    subtitle: 'Last 200 tracked user activities',
+    filename: 'audit-activity-report.pdf',
+    columns: [
+      { key: 'created_at', label: 'Timestamp' },
+      { key: 'full_name', label: 'User' },
+      { key: 'username', label: 'Username' },
+      { key: 'action', label: 'Action' },
+      { key: 'resource', label: 'Resource' },
+      { key: 'resource_id', label: 'Resource ID' },
+      { key: 'details', label: 'Details' }
+    ],
+    rows: window._allAuditLogs || []
+  });
+}
+
 /* ── Admissions Page ── */
 async function renderAdmissions() {
   try {
     const admissions = await API.get('/api/admissions');
+    window._allAdmissions = admissions;
     let html = `<div class="section-header"><h3 class="section-title">Admissions</h3><div class="section-actions">
+      ${reportBtn('downloadAdmissionsReport()', 'Report PDF')}
       ${ifCanWrite('admissions', `<button class="btn btn-primary" onclick="showAdmissionForm()">${Icon('plus',14)} New Admission</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'room_number',label:'Room'},{key:'doctor_name',label:'Doctor'},
@@ -63,6 +235,7 @@ async function renderMedicalRecords() {
     const records = await API.get('/api/medical-records');
     let html = `<div class="section-header"><h3 class="section-title">Medical Records</h3><div class="section-actions">
       ${searchBoxHtml('recordSearch','Search by patient or diagnosis...','filterRecords()')}
+      ${reportBtn('downloadMedicalRecordsReport()', 'Report PDF')}
       ${ifCanWrite('medical-records', `<button class="btn btn-primary" onclick="showRecordForm()">${Icon('plus',14)} Add Record</button>`)}</div></div>`;
     html += `<div id="recordsTable">${buildRecordsTable(records)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
@@ -129,7 +302,9 @@ async function deleteRecord(id){if(await confirmAction('Delete this record?')){t
 async function renderAppointments(){
   try{
     const appts = await API.get('/api/appointments');
+    window._allAppointments = appts;
     let html = `<div class="section-header"><h3 class="section-title">Appointments</h3><div class="section-actions">
+      ${reportBtn('downloadAppointmentsReport()', 'Report PDF')}
       ${ifCanWrite('appointments', `<button class="btn btn-primary" onclick="showAppointmentForm()">${Icon('plus',14)} Book Appointment</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'doctor_name',label:'Doctor'},
@@ -170,7 +345,9 @@ async function deleteAppointment(id){if(await confirmAction('Delete this appoint
 async function renderBilling(){
   try{
     const bills=await API.get('/api/billing');
+    window._allBills = bills;
     let html=`<div class="section-header"><h3 class="section-title">Billing</h3><div class="section-actions">
+      ${reportBtn('downloadBillingReport()', 'Report PDF')}
       ${ifCanWrite('billing', `<button class="btn btn-primary" onclick="showBillForm()">${Icon('plus',14)} New Bill</button>`)}</div></div>`;
     html+=buildTable(
       [{key:'id',label:'ID'},{key:'patient_name',label:'Patient'},{key:'description',label:'Description'},
@@ -178,7 +355,7 @@ async function renderBilling(){
        {key:'payment_method',label:'Method'},{key:'billing_date',label:'Date',render:v=>v?v.split('T')[0]:'-'},
        {key:'status',label:'Status',render:v=>statusBadge(v)}],
       bills,
-      moduleCanWrite('billing') ? (row)=>`${editBtn(`showBillForm(${row.id})`)}${deleteBtn(`deleteBill(${row.id})`)}` : null
+      (row)=>`${invoiceBtn(`downloadBillInvoice(${row.id})`)}${moduleCanWrite('billing') ? `${editBtn(`showBillForm(${row.id})`)}${deleteBtn(`deleteBill(${row.id})`)}` : ''}`
     );
     document.getElementById('pageContent').innerHTML=html;
   }catch(e){showToast('Error: '+e.message,'error');}
@@ -215,7 +392,9 @@ async function deleteBill(id){if(await confirmAction('Delete this bill?')){try{a
 async function renderStaff(){
   try{
     const staff=await API.get('/api/staff');
+    window._allStaff = staff;
     let html=`<div class="section-header"><h3 class="section-title">Staff</h3><div class="section-actions">
+      ${reportBtn('downloadStaffReport()', 'Report PDF')}
       ${moduleCanRead('staff-duties') ? `<button class="btn btn-secondary" onclick="renderDuties()">${Icon('calendar',14)} View Duty Roster</button>` : ''}
       ${ifCanWrite('staff', `<button class="btn btn-primary" onclick="showStaffForm()">${Icon('plus',14)} Add Staff</button>`)}</div></div>`;
     html+=buildTable(
@@ -254,8 +433,10 @@ async function deleteStaffMember(id){if(await confirmAction('Delete this staff m
 async function renderDuties(){
   try{
     const duties=await API.get('/api/staff-duties');
+    window._allDuties = duties;
     let html=`<div class="section-header"><h3 class="section-title">Duty Roster</h3><div class="section-actions">
       <button class="btn btn-secondary" onclick="renderStaff()">← Back to Staff</button>
+      ${reportBtn('downloadDutiesReport()', 'Report PDF')}
       ${ifCanWrite('staff-duties', `<button class="btn btn-primary" onclick="showDutyForm()">${Icon('plus',14)} Assign Duty</button>`)}</div></div>`;
     html+=buildTable(
       [{key:'staff_name',label:'Staff'},{key:'shift',label:'Shift',render:v=>badgeHtml(v,v==='Morning'?'warning':v==='Afternoon'?'info':'default')},
@@ -292,6 +473,7 @@ async function renderBloodBank(){
     const summary=await API.get('/api/blood-donations/summary');
     let html=`<div class="section-header"><h3 class="section-title">Blood Bank</h3><div class="section-actions">
       ${searchBoxHtml('bloodSearch','Search by blood group...','filterBlood()')}
+      ${reportBtn('downloadBloodBankReport()', 'Report PDF')}
       ${ifCanWrite('blood-donations', `<button class="btn btn-primary" onclick="showDonationForm()">${Icon('plus',14)} Add Donation</button>`)}</div></div>`;
     html+=`<div class="blood-grid">`;
     ['A+','A-','B+','B-','AB+','AB-','O+','O-'].forEach(g=>{const f=summary.find(s=>s.blood_group===g);
@@ -348,7 +530,9 @@ async function renderUsers() {
   if (!Auth.isAdmin()) { document.getElementById('pageContent').innerHTML = `<div class="access-denied"><div class="access-denied-icon">${Icon('shield',56)}</div><h3 class="access-denied-title">Admin Only</h3></div>`; return; }
   try {
     const users = await API.get('/api/users');
+    window._allUsers = users;
     let html = `<div class="section-header"><h3 class="section-title">User Accounts</h3><div class="section-actions">
+      ${reportBtn('downloadUsersReport()', 'Report PDF')}
       <button class="btn btn-primary" onclick="showUserForm()">${Icon('plus',14)} Create User</button></div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'username',label:'Username'},{key:'full_name',label:'Full Name'},
@@ -427,8 +611,10 @@ async function renderAuditLog() {
   if (!Auth.isAdmin()) { document.getElementById('pageContent').innerHTML = `<div class="access-denied"><div class="access-denied-icon">${Icon('shield',56)}</div><h3 class="access-denied-title">Admin Only</h3></div>`; return; }
   try {
     const logs = await API.get('/api/audit-log');
-    let html = `<div class="section-header"><h3 class="section-title">${Icon('scroll',18)} Activity Log</h3>
-      <p style="color:var(--text-muted);font-size:12px">Last 200 actions tracked</p></div>`;
+    window._allAuditLogs = logs;
+    let html = `<div class="section-header"><h3 class="section-title">${Icon('scroll',18)} Activity Log</h3><div class="section-actions">
+      ${reportBtn('downloadAuditLogReport()', 'Report PDF')}
+      <p style="color:var(--text-muted);font-size:12px">Last 200 actions tracked</p></div></div>`;
     html += buildTable(
       [{key:'created_at',label:'Timestamp',render:v=>v?v.replace('T',' ').substring(0,19):''},
        {key:'full_name',label:'User'},{key:'username',label:'Username'},

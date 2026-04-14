@@ -1,7 +1,115 @@
+const DASHBOARD_METRIC_LABELS = {
+  totalPatients: 'Total Patients',
+  totalDoctors: 'Active Doctors',
+  availableRooms: 'Available Rooms',
+  totalRooms: 'Total Rooms',
+  activeAdmissions: 'Active Admissions',
+  todayAppointments: "Today's Appointments",
+  pendingBills: 'Pending Bills',
+  bloodUnits: 'Blood Units Available',
+  totalStaff: 'Active Staff',
+  totalUsers: 'Total System Users'
+};
+
+function downloadDashboardReport() {
+  const data = window._dashboardReportData;
+  if (!data || !data.stats) {
+    showToast('Dashboard data is not ready yet', 'error');
+    return;
+  }
+  const rows = Object.entries(data.stats).map(([key, value]) => ({
+    metric: DASHBOARD_METRIC_LABELS[key] || key,
+    value: value
+  }));
+  downloadReportPdf({
+    title: 'Dashboard Summary Report',
+    subtitle: 'Operational snapshot of current visible modules',
+    filename: 'dashboard-summary-report.pdf',
+    columns: [
+      { key: 'metric', label: 'Metric' },
+      { key: 'value', label: 'Value' }
+    ],
+    rows,
+    meta: [
+      { label: 'Recent Admissions', value: (data.recentAdmissions || []).length },
+      { label: "Today's Appointments", value: (data.todayAppointments || []).length },
+      { label: 'Blood Groups Tracked', value: (data.bloodSummary || []).length }
+    ]
+  });
+}
+
+function downloadDepartmentsReport() {
+  downloadReportPdf({
+    title: 'Department Report',
+    subtitle: 'Department directory and assigned leadership',
+    filename: 'departments-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Department Name' },
+      { key: 'description', label: 'Description' },
+      { key: 'head_doctor_name', label: 'Head Doctor' }
+    ],
+    rows: window._allDepartments || []
+  });
+}
+
+function downloadDoctorsReport() {
+  downloadReportPdf({
+    title: 'Doctor Directory Report',
+    subtitle: 'Doctor list with specialization and status',
+    filename: 'doctors-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Doctor Name' },
+      { key: 'specialization', label: 'Specialization' },
+      { key: 'department_name', label: 'Department' },
+      { key: 'phone', label: 'Phone' },
+      { key: 'status', label: 'Status' }
+    ],
+    rows: window._allDoctors || []
+  });
+}
+
+function downloadPatientsReport() {
+  downloadReportPdf({
+    title: 'Patient Report',
+    subtitle: 'Patient directory and contact summary',
+    filename: 'patients-report.pdf',
+    columns: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Patient Name' },
+      { key: 'gender', label: 'Gender' },
+      { key: 'blood_group', label: 'Blood Group' },
+      { key: 'phone', label: 'Phone' },
+      { key: 'date_of_birth', label: 'Date of Birth' }
+    ],
+    rows: window._allPatients || []
+  });
+}
+
+function downloadRoomsReport() {
+  downloadReportPdf({
+    title: 'Room Occupancy Report',
+    subtitle: 'Room availability and occupancy details',
+    filename: 'rooms-report.pdf',
+    columns: [
+      { key: 'room_number', label: 'Room Number' },
+      { key: 'type', label: 'Type' },
+      { key: 'floor', label: 'Floor' },
+      { key: 'capacity', label: 'Capacity' },
+      { key: 'occupied_beds', label: 'Occupied Beds' },
+      { key: 'rate_per_day', label: 'Rate/Day', pdfRender: (v) => asCurrency(v) },
+      { key: 'status', label: 'Status' }
+    ],
+    rows: window._allRooms || []
+  });
+}
+
 /* ── Dashboard Page ── */
 async function renderDashboard() {
   try {
     const data = await API.get('/api/dashboard');
+    window._dashboardReportData = data;
     const s = data.stats || {};
     const cards = [];
 
@@ -15,7 +123,8 @@ async function renderDashboard() {
     if (s.totalStaff !== undefined) cards.push({ icon:'usersRound', val:s.totalStaff, lbl:'Active Staff' });
     if (s.totalUsers !== undefined) cards.push({ icon:'shield', val:s.totalUsers, lbl:'Total System Users' });
 
-    let html = cards.length
+    let html = `<div class="section-header"><h3 class="section-title">Executive Dashboard</h3><div class="section-actions">${reportBtn('downloadDashboardReport()', 'Dashboard PDF')}</div></div>`;
+    html += cards.length
       ? `<div class="stats-grid">${cards.map(c => `
         <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon">${Icon(c.icon, 22)}</div></div>
         <div class="stat-card-value">${c.val}</div><div class="stat-card-label">${c.lbl}</div></div>`).join('')}</div>`
@@ -56,7 +165,9 @@ async function renderDashboard() {
 async function renderDepartments() {
   try {
     const depts = await API.get('/api/departments');
+    window._allDepartments = depts;
     let html = `<div class="section-header"><h3 class="section-title">All Departments</h3><div class="section-actions">
+      ${reportBtn('downloadDepartmentsReport()', 'Report PDF')}
       ${ifCanWrite('departments', `<button class="btn btn-primary" onclick="showDepartmentForm()">${Icon('plus',14)} Add Department</button>`)}</div></div>`;
     html += buildTable(
       [{key:'id',label:'ID'},{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'head_doctor_name',label:'Head Doctor'}],
@@ -96,6 +207,7 @@ async function renderDoctors() {
     const doctors = await API.get('/api/doctors');
     let html = `<div class="section-header"><h3 class="section-title">All Doctors</h3><div class="section-actions">
       ${searchBoxHtml('doctorSearch','Search doctors...','filterDoctors()')}
+      ${reportBtn('downloadDoctorsReport()', 'Report PDF')}
       ${ifCanWrite('doctors', `<button class="btn btn-primary" onclick="showDoctorForm()">${Icon('plus',14)} Add Doctor</button>`)}</div></div>`;
     html += `<div id="doctorsTable">${buildDoctorsTable(doctors)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
@@ -165,6 +277,7 @@ async function renderPatients() {
     const patients = await API.get('/api/patients');
     let html = `<div class="section-header"><h3 class="section-title">All Patients</h3><div class="section-actions">
       ${searchBoxHtml('patientSearch','Search by name or blood group...','filterPatients()')}
+      ${reportBtn('downloadPatientsReport()', 'Report PDF')}
       ${ifCanWrite('patients', `<button class="btn btn-primary" onclick="showPatientForm()">${Icon('plus',14)} Add Patient</button>`)}</div></div>`;
     html += `<div id="patientsTable">${buildPatientsTable(patients)}</div>`;
     document.getElementById('pageContent').innerHTML = html;
@@ -233,7 +346,9 @@ async function deletePatient(id) {
 async function renderRooms() {
   try {
     const rooms = await API.get('/api/rooms');
+    window._allRooms = rooms;
     let html = `<div class="section-header"><h3 class="section-title">Room Management</h3><div class="section-actions">
+      ${reportBtn('downloadRoomsReport()', 'Report PDF')}
       ${ifCanWrite('rooms', `<button class="btn btn-primary" onclick="showRoomForm()">${Icon('plus',14)} Add Room</button>`)}</div></div>`;
     html += `<div class="room-grid">`;
     rooms.forEach(r => {
