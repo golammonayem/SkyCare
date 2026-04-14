@@ -586,7 +586,11 @@ async function uploadAvatar(userId, input) {
   const formData = new FormData();
   formData.append('avatar', file);
   try {
-    const res = await fetch(`/api/users/${userId}/avatar`, { method:'POST', body: formData });
+    const res = await fetch(`/api/users/${userId}/avatar`, {
+      method:'POST',
+      headers: { 'Authorization': 'Bearer ' + Auth.getToken() },
+      body: formData
+    });
     if (!res.ok) throw new Error('Upload failed');
     const data = await res.json();
     showToast('Avatar uploaded','success');

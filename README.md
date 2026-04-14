@@ -2,7 +2,7 @@
 
 ![SkyCare Banner](public/img/banner.png)
 
-> Modern, secure Hospital Management System with role-based access control, built with Node.js, Express, SQLite, and vanilla JavaScript.
+> Modern, secure Hospital Management System with role-based access control, built with Node.js, Express, TiDB (MySQL), Cloudinary, and vanilla JavaScript.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
@@ -85,12 +85,12 @@ You can override these bootstrap passwords using environment variables:
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Node.js + Express.js |
-| **Database** | SQLite via better-sqlite3 |
+| **Database** | TiDB Serverless (MySQL protocol) via mysql2 |
 | **Auth** | bcryptjs (hashing) + Session tokens |
 | **Frontend** | Vanilla HTML5, CSS3, JavaScript (ES6+) |
 | **Icons** | Custom SVG icon system (35+ icons) |
 | **Typography** | Plus Jakarta Sans (Google Fonts) |
-| **File Upload** | Multer |
+| **File Upload** | Multer + Cloudinary |
 
 ---
 
@@ -119,7 +119,7 @@ SkyCare/
 │   ├── img/
 │   │   ├── logo.svg       # Custom SVG logo
 │   │   └── banner.png     # README banner image
-│   └── uploads/           # User avatar uploads
+│   └── uploads/           # Optional local folder (legacy; avatars now stored in Cloudinary)
 └── .gitignore
 ```
 
@@ -137,10 +137,9 @@ SkyCare/
 
 ### Render Compatibility Notes
 
-- Persistent storage is configured with a mounted disk at `/var/data`
-- SQLite database path is automatically mapped to: `/var/data/skycare.db`
-- On first Render boot, if `/var/data/skycare.db` does not exist, app copies your bundled `database/skycare.db` so current data is preserved
-- Avatar uploads are stored in `/var/data/uploads` and served from `/uploads/*`
+- Set TiDB env vars in Render: `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE`
+- Set Cloudinary env vars in Render: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- Optional Cloudinary folder override: `CLOUDINARY_FOLDER` (default: `skycare/avatars`)
 - Health endpoint for Render and keepalive: `/healthz`
 - Self-ping runs every 14 minutes (controlled by env `SELF_PING_ENABLED=true`)
 
@@ -169,5 +168,5 @@ MIT License — free to use for academic and personal projects.
 
 Built as a DBMS Lab Course Project.
 
-**Technologies**: Node.js, Express, SQLite, Vanilla JavaScript  
+**Technologies**: Node.js, Express, TiDB, Cloudinary, Vanilla JavaScript  
 **Design**: Inspired by modern medical SaaS platforms (Behance references)
