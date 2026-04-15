@@ -102,7 +102,7 @@ SkyCare/
 ├── package.json           # Dependencies and scripts
 ├── render.yaml            # Render deployment config
 ├── database/
-│   ├── schema.js          # Single schema definition (all tables/indexes)
+│   ├── schema.sql         # Single schema definition (all tables/indexes)
 │   └── init.js            # Schema apply + seed data
 ├── public/
 │   ├── index.html         # Main SPA shell

@@ -1,6 +1,9 @@
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
-const schemaStatements = require('./schema');
+const fs = require('fs');
+const path = require('path');
+
+const schemaPath = path.join(__dirname, 'schema.sql');
 
 const REQUIRED_TIDB_ENV = ['TIDB_HOST', 'TIDB_PORT', 'TIDB_USER', 'TIDB_PASSWORD', 'TIDB_DATABASE'];
 const missingEnv = REQUIRED_TIDB_ENV.filter((key) => !process.env[key]);
@@ -65,9 +68,18 @@ async function runStatements(statements) {
   }
 }
 
+function loadSchemaStatements() {
+  const sql = fs.readFileSync(schemaPath, 'utf8');
+  return sql
+    .replace(/\r\n/g, '\n')
+    .split(/;\s*\n|;\s*$/)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
 async function initializeDatabase() {
   await db.query('SELECT 1');
-  await runStatements(schemaStatements);
+  await runStatements(loadSchemaStatements());
 
   await seedUsers();
   await resetInsecureDefaultPasswords();
