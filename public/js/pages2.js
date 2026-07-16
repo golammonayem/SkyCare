@@ -546,11 +546,23 @@ async function renderUsers() {
   } catch(e) { showToast('Error: '+e.message, 'error'); }
 }
 
-function autoFillUserForm(selectElement) {
-  if (!selectElement.value) return;
-  const opt = selectElement.options[selectElement.selectedIndex];
-  if (!opt.dataset.info) return;
-  const info = JSON.parse(opt.dataset.info);
+function autoFillUserForm(inputElement) {
+  if (!inputElement.value) return;
+  
+  let info = null;
+  // If it's a select element (fallback), use options. Otherwise use datalist for the searchable input.
+  if (inputElement.tagName === 'SELECT') {
+    const opt = inputElement.options[inputElement.selectedIndex];
+    if (opt && opt.dataset.info) info = JSON.parse(opt.dataset.info);
+  } else {
+    const datalist = document.getElementById('linkProfileList');
+    if (datalist) {
+      const opt = Array.from(datalist.options).find(o => o.value === inputElement.value);
+      if (opt && opt.dataset.info) info = JSON.parse(opt.dataset.info);
+    }
+  }
+  
+  if (!info) return;
   
   const form = document.getElementById('userForm');
   let prefix = info.type === 'doctor' ? 'dr.' : (info.role === 'Nurse' ? 'nurse.' : 'staff.');
@@ -579,10 +591,10 @@ async function showUserForm(id) {
       
       linkOptions = `<div class="form-group" style="margin-bottom:16px; padding:12px; background:var(--accent-light); border-radius:var(--radius-md);">
         <label class="form-label" style="color:var(--accent); font-weight:600;">Link existing Doctor or Staff (Optional)</label>
-        <select class="form-control" onchange="autoFillUserForm(this)">
-          <option value="">-- Select a Profile to auto-fill --</option>
-          ${opts.map((o, idx) => `<option value="${idx}" data-info='${JSON.stringify(o).replace(/'/g, "&#39;")}'>${o.name} (${o.role})</option>`).join('')}
-        </select>
+        <input class="form-control" list="linkProfileList" placeholder="Search by name..." oninput="autoFillUserForm(this)">
+        <datalist id="linkProfileList">
+          ${opts.map((o) => `<option value="${o.name} (${o.role})" data-info='${JSON.stringify(o).replace(/'/g, "&#39;")}'>`).join('')}
+        </datalist>
       </div>`;
     } catch(e) {}
   }
