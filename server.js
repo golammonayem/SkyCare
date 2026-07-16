@@ -385,51 +385,83 @@ app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
 app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
     const query = (req.body.query || '').toLowerCase();
-    
-    // Fetch more stats to make the AI smarter
-    const totalPatients = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
-    const totalDoctors = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
-    const availableRooms = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
-    const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
-    const activeAdmissions = (await fetchOne("SELECT COUNT(*) AS c FROM admissions WHERE status = 'Admitted'"))?.c || 0;
-    const pendingBills = (await fetchOne("SELECT COUNT(*) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
-    const todayAppointments = (await fetchOne("SELECT COUNT(*) AS c FROM appointments WHERE appointment_date = CURRENT_DATE()"))?.c || 0;
-    const totalStaff = (await fetchOne("SELECT COUNT(*) AS c FROM staff WHERE status = 'Active'"))?.c || 0;
-    const bloodUnits = (await fetchOne("SELECT SUM(units) AS c FROM blood_donations WHERE status = 'Available'"))?.c || 0;
-    
-    let answer = "I'm a simulated AI assistant built for SkyCare. I can answer basic questions about hospital metrics.";
-    
-    // Smarter keyword matching (fuzzy/stem matching)
-    if (query.match(/patient|pat|sick|people/)) {
-      answer = `Currently, we have **${totalPatients}** registered patients in the system.`;
-    } else if (query.match(/doctor|doc|physician|doetor|surgeon/)) {
-      answer = `We currently have **${totalDoctors}** active doctors available on staff.`;
-    } else if (query.match(/room|bed|capacity|occupancy|stay/)) {
-      const occupancyRate = totalRooms > 0 ? Math.round((totalRooms - availableRooms) / totalRooms * 100) : 0;
-      answer = `The hospital is at **${occupancyRate}%** capacity. There are **${availableRooms}** out of ${totalRooms} rooms available right now.`;
-    } else if (query.match(/admission|admit|admitted|ward/)) {
-      answer = `There are currently **${activeAdmissions}** active admissions (patients currently staying in their assigned rooms).`;
-    } else if (query.match(/bill|money|finance|pending|invoice|pay/)) {
-      answer = `We currently have **${pendingBills}** pending or partially paid bills that need attention.`;
-    } else if (query.match(/appoint|schedule|meeting|today/)) {
-      answer = `There are **${todayAppointments}** appointments scheduled for today.`;
-    } else if (query.match(/staff|nurse|reception|admin|employee/)) {
-      answer = `We have **${totalStaff}** active staff members (excluding doctors).`;
-    } else if (query.match(/blood|donate|plasma/)) {
-      answer = `The blood bank currently has **${bloodUnits}** units available.`;
-    } else if (query.match(/hi|hello|hey|greetings/)) {
-      answer = "Hello! I am your AI Assistant. You can ask me about patients, doctors, rooms, bills, appointments, or blood bank status.";
-    } else if (query.match(/all|summary|report|stats|status/)) {
-      answer = `Here is a quick summary:\n- Patients: **${totalPatients}**\n- Doctors: **${totalDoctors}**\n- Available Rooms: **${availableRooms}**\n- Today's Appointments: **${todayAppointments}**\n- Available Blood Units: **${bloodUnits}**`;
-    } else if (query.match(/thank|thx|great|good|awesome/)) {
-      answer = "You're very welcome! Let me know if you need anything else.";
-    } else {
-      answer = "I'm sorry, I couldn't understand that. I'm a simple AI that looks for keywords. Try asking me about **'patients'**, **'doctors'**, **'appointments'**, **'rooms'**, or **'bills'**.";
+    let answer = '';
+
+    // Advanced NLP-like pattern matching
+    if (query.match(/doctor|doc|physician|surgeon/)) {
+      if (query.match(/leave|inactive|absent/)) {
+        const [rows] = await db.query("SELECT name FROM doctors WHERE status = 'On Leave'");
+        answer = rows.length ? `The doctors currently on leave are: **${rows.map(r=>r.name).join(', ')}**.` : "There are currently no doctors on leave.";
+      } else if (query.match(/name|list|who|all/)) {
+        const [rows] = await db.query("SELECT name, status FROM doctors");
+        answer = `Here are our doctors: \n` + rows.map(r=>`- **${r.name}** (${r.status})`).join('\n');
+      } else {
+        const total = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
+        answer = `We have **${total}** active doctors. Ask me for a "list of doctors" or "who is on leave".`;
+      }
+    } 
+    else if (query.match(/patient|pat|sick/)) {
+      if (query.match(/name|list|who|all/)) {
+        const [rows] = await db.query("SELECT name FROM patients ORDER BY id DESC LIMIT 10");
+        answer = `Here are some of our recently registered patients: \n` + rows.map(r=>`- **${r.name}**`).join('\n');
+      } else {
+        const total = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
+        answer = `We have **${total}** registered patients. You can ask me to "list patients".`;
+      }
+    }
+    else if (query.match(/department|dept/)) {
+      const [rows] = await db.query("SELECT name FROM departments");
+      answer = `Our hospital has the following departments: \n` + rows.map(r=>`- **${r.name}**`).join('\n');
+    }
+    else if (query.match(/staff|nurse/)) {
+      if (query.match(/leave/)) {
+        const [rows] = await db.query("SELECT name, role FROM staff WHERE status = 'On Leave'");
+        answer = rows.length ? `Staff on leave: \n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n') : "No staff are currently on leave.";
+      } else if (query.match(/name|list|who/)) {
+        const [rows] = await db.query("SELECT name, role FROM staff");
+        answer = `Here is our staff: \n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n');
+      } else {
+        const total = (await fetchOne("SELECT COUNT(*) AS c FROM staff WHERE status = 'Active'"))?.c || 0;
+        answer = `We have **${total}** active staff members (excluding doctors).`;
+      }
+    }
+    else if (query.match(/room|bed|capacity/)) {
+      if (query.match(/available|empty|free/)) {
+        const [rows] = await db.query("SELECT room_number, type FROM rooms WHERE status = 'Available'");
+        answer = `Available rooms: \n` + rows.map(r=>`- Room **${r.room_number}** (${r.type})`).join('\n');
+      } else {
+        const available = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
+        const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
+        answer = `There are **${available}** out of ${totalRooms} rooms available right now. Ask me to "list available rooms".`;
+      }
+    }
+    else if (query.match(/bill|money|finance|pending/)) {
+      const [rows] = await db.query("SELECT p.name, b.total_amount, b.paid_amount FROM billing b JOIN patients p ON b.patient_id = p.id WHERE b.status IN ('Pending', 'Partial')");
+      if (rows.length) {
+        answer = `We have ${rows.length} pending bills:\n` + rows.map(r=>`- **${r.name}**: Owed ৳${r.total_amount - r.paid_amount}`).join('\n');
+      } else {
+        answer = "There are currently no pending bills.";
+      }
+    }
+    else if (query.match(/appoint|schedule/)) {
+      const [rows] = await db.query("SELECT p.name as patient, d.name as doctor, a.appointment_time FROM appointments a JOIN patients p ON a.patient_id = p.id JOIN doctors d ON a.doctor_id = d.id WHERE a.appointment_date = CURRENT_DATE()");
+      if (rows.length) {
+        answer = `Today's appointments:\n` + rows.map(r=>`- **${r.appointment_time}**: ${r.patient} with ${r.doctor}`).join('\n');
+      } else {
+        answer = "There are no appointments scheduled for today.";
+      }
+    }
+    else if (query.match(/hi|hello|hey|greetings/)) {
+      answer = "Hello! I am your AI Assistant. I can now fetch lists of data! Try asking me: 'who are the doctors on leave', 'list available rooms', or 'pending bills'.";
+    } 
+    else if (query.match(/thank|thx|great|good|awesome/)) {
+      answer = "You're very welcome! Let me know if you need any other data.";
+    } 
+    else {
+      answer = "I couldn't quite find what you're looking for. Try asking me something like:\n- *'list doctors on leave'*\n- *'show available rooms'*\n- *'who has pending bills'*\n- *'today's appointments'*";
     }
 
-    // Simulate AI typing delay
-    await new Promise(r => setTimeout(r, 600));
-
+    await new Promise(r => setTimeout(r, 800)); // slightly longer delay to feel like it's thinking
     res.json({ answer });
   } catch (error) {
     res.status(500).json({ error: error.message });
