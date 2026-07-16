@@ -164,36 +164,105 @@ async function renderDashboard() {
 }
 
 async function generateAiSummary() {
-  openModal('AI Smart Summary', `<div style="padding:32px 20px; text-align:center;" id="aiSummaryContent">
-    <div style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px auto;"></div>
-    <p style="color:var(--text-sec);font-weight:500;">AI is analyzing hospital data...</p>
-    <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">This might take a moment.</p>
-  </div>`, null);
+  openModal('AI Assistant', `
+    <div style="display:flex; flex-direction:column; height:450px; margin:-16px;">
+      <div id="aiChatArea" style="flex:1; overflow-y:auto; padding:16px; background:var(--bg); display:flex; flex-direction:column; gap:12px;">
+        <div style="text-align:center; padding:20px;" id="aiLoadingIndicator">
+          <div style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px auto;"></div>
+          <p style="color:var(--text-sec);font-size:13px;">Analyzing hospital data...</p>
+        </div>
+      </div>
+      <div style="padding:12px; background:var(--card); border-top:1px solid var(--border); display:flex; gap:8px; border-bottom-left-radius:16px; border-bottom-right-radius:16px;">
+        <input type="text" id="aiChatInput" class="form-control" placeholder="Ask about patients, rooms, bills..." style="flex:1; padding:10px 14px;" onkeypress="if(event.key==='Enter') sendAiQuery()">
+        <button class="btn btn-primary" onclick="sendAiQuery()" id="aiSendBtn" style="padding:0 16px;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </div>
+    </div>
+  `, null);
+  
+  // hide the modal's default footer to save space
+  const footer = document.getElementById('modalFooter');
+  if(footer) footer.style.display = 'none';
 
   try {
     const data = await API.get('/api/ai-summary');
-    const formattedSummary = data.summary
-      .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text);">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/\n\n/g, '</p><p style="margin-bottom:12px;">')
-      .replace(/\n/g, '<br>');
-
-    document.getElementById('aiSummaryContent').innerHTML = `
-      <div style="text-align:left; background:var(--card); border-radius:12px; padding:24px; border:1px solid var(--border); line-height:1.6; color:var(--text-sec); box-shadow:0 4px 20px rgba(0,0,0,0.03);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;color:var(--accent);">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg>
-          <h4 style="color:var(--text);font-size:16px;margin:0;">Analysis Complete</h4>
-        </div>
-        <p style="margin-bottom:12px;font-size:14px;">${formattedSummary}</p>
-      </div>
-    `;
+    const loading = document.getElementById('aiLoadingIndicator');
+    if(loading) loading.remove();
+    appendAiMessage(data.summary);
   } catch (e) {
-    document.getElementById('aiSummaryContent').innerHTML = `
-      <div class="login-error show" style="justify-content:center; margin:0;">
-        <span style="display:flex;align-items:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Failed to generate summary: ${e.message}</span>
-      </div>
-    `;
+    const loading = document.getElementById('aiLoadingIndicator');
+    if(loading) loading.remove();
+    appendAiMessage(`Error: ${e.message}`);
   }
+}
+
+async function sendAiQuery() {
+  const input = document.getElementById('aiChatInput');
+  const btn = document.getElementById('aiSendBtn');
+  const query = input.value.trim();
+  if(!query) return;
+  
+  appendUserMessage(query);
+  input.value = '';
+  input.disabled = true;
+  btn.disabled = true;
+  
+  const loadingId = appendAiLoading();
+  
+  try {
+    const data = await API.post('/api/ai-chat', { query });
+    document.getElementById(loadingId).remove();
+    appendAiMessage(data.answer);
+  } catch(e) {
+    document.getElementById(loadingId).remove();
+    appendAiMessage(`Error: ${e.message}`);
+  }
+  
+  input.disabled = false;
+  btn.disabled = false;
+  input.focus();
+}
+
+function appendUserMessage(text) {
+  const chatArea = document.getElementById('aiChatArea');
+  const div = document.createElement('div');
+  div.style.cssText = 'align-self:flex-end; background:#2563EB; color:#fff; padding:10px 14px; border-radius:14px; border-bottom-right-radius:4px; max-width:85%; font-size:14px; box-shadow:0 2px 8px rgba(37,99,235,0.2); word-break:break-word;';
+  div.textContent = text;
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function appendAiMessage(text) {
+  const chatArea = document.getElementById('aiChatArea');
+  const div = document.createElement('div');
+  div.style.cssText = 'align-self:flex-start; background:var(--card); color:var(--text); padding:12px 16px; border-radius:14px; border-bottom-left-radius:4px; max-width:90%; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,0.05); border:1px solid var(--border); line-height:1.5;';
+  
+  const formattedText = text
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text);">$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n\n/g, '</p><p style="margin-bottom:8px;">')
+    .replace(/\n/g, '<br>');
+    
+  div.innerHTML = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;color:#2563EB;font-weight:700;font-size:12px;">
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg> AI
+  </div><p style="margin:0;">${formattedText}</p>`;
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function appendAiLoading() {
+  const chatArea = document.getElementById('aiChatArea');
+  const div = document.createElement('div');
+  const id = 'loading-' + Date.now();
+  div.id = id;
+  div.style.cssText = 'align-self:flex-start; background:var(--card); padding:12px 16px; border-radius:14px; border-bottom-left-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,0.05); border:1px solid var(--border); display:flex; gap:4px; align-items:center;';
+  div.innerHTML = `<span style="width:6px;height:6px;background:var(--text-muted);border-radius:50%;animation:pulse 1s infinite;"></span>
+                   <span style="width:6px;height:6px;background:var(--text-muted);border-radius:50%;animation:pulse 1s infinite .2s;"></span>
+                   <span style="width:6px;height:6px;background:var(--text-muted);border-radius:50%;animation:pulse 1s infinite .4s;"></span>`;
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return id;
 }
 
 /* ── Departments Page ── */

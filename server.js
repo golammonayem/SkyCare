@@ -382,6 +382,47 @@ app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
   }
 });
 
+app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
+  try {
+    const query = (req.body.query || '').toLowerCase();
+    
+    const totalPatients = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
+    const totalDoctors = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
+    const availableRooms = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
+    const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
+    const activeAdmissions = (await fetchOne("SELECT COUNT(*) AS c FROM admissions WHERE status = 'Admitted'"))?.c || 0;
+    const pendingBills = (await fetchOne("SELECT COUNT(*) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+    
+    let answer = "I'm a simulated AI assistant built for SkyCare. I can answer basic questions about hospital metrics.";
+    
+    if (query.includes('patient') || query.includes('how many patients')) {
+      answer = `Currently, we have **${totalPatients}** registered patients in the system.`;
+    } else if (query.includes('doctor') || query.includes('physician')) {
+      answer = `We currently have **${totalDoctors}** active doctors available.`;
+    } else if (query.includes('room') || query.includes('bed') || query.includes('capacity') || query.includes('occupancy')) {
+      const occupancyRate = totalRooms > 0 ? Math.round((totalRooms - availableRooms) / totalRooms * 100) : 0;
+      answer = `The hospital is at **${occupancyRate}%** capacity. There are **${availableRooms}** out of ${totalRooms} rooms available right now.`;
+    } else if (query.includes('admission') || query.includes('admitted')) {
+      answer = `There are currently **${activeAdmissions}** active admissions (patients currently staying in their assigned rooms).`;
+    } else if (query.includes('bill') || query.includes('money') || query.includes('finance') || query.includes('pending')) {
+      answer = `We currently have **${pendingBills}** pending bills that need to be cleared.`;
+    } else if (query.includes('hi') || query.includes('hello') || query.includes('hey')) {
+      answer = "Hello! I am your AI Assistant. You can ask me about patients, doctors, room availability, or billing status.";
+    } else if (query.includes('all') || query.includes('summary')) {
+      answer = `Here is a quick summary:\n- Patients: **${totalPatients}**\n- Doctors: **${totalDoctors}**\n- Available Rooms: **${availableRooms}**\n- Admissions: **${activeAdmissions}**`;
+    } else {
+      answer = "I'm sorry, I couldn't understand that query. Try asking me about 'patients', 'doctors', 'rooms', or 'bills'. (Note: Connect a real LLM like Gemini for advanced AI capabilities).";
+    }
+
+    // Simulate AI typing delay
+    await new Promise(r => setTimeout(r, 600));
+
+    res.json({ answer });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ═══════════════════════════════════════════
 // USER MANAGEMENT (Admin only)
 // ═══════════════════════════════════════════
