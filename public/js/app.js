@@ -61,6 +61,19 @@ function handleHashChange() {
   navigate(hash);
 }
 
+function refreshCurrentData() {
+  const renderer = PAGE_RENDERERS[currentPage];
+  if (renderer) {
+    const btn = document.getElementById('globalRefreshBtn');
+    if (btn) {
+      btn.style.animation = 'spin 1s linear infinite';
+      setTimeout(() => { btn.style.animation = ''; }, 1000);
+    }
+    renderer();
+    showToast('Data refreshed successfully', 'success');
+  }
+}
+
 /* ── Clock ── */
 function updateClock() {
   const now = new Date();
