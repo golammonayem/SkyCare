@@ -128,6 +128,28 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="/js/icons.js"></script>
+  <!-- AI Sidebar Overlay -->
+  <div id="aiSidebarOverlay" class="ai-sidebar-overlay" onclick="closeAiSidebar()"></div>
+  <!-- AI Sidebar -->
+  <div id="aiSidebar" class="ai-sidebar">
+    <div class="ai-header">
+      <h3>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg>
+        AI Assistant
+      </h3>
+      <button class="ai-close" onclick="closeAiSidebar()"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    </div>
+    <div id="aiChatArea" style="flex:1; overflow-y:auto; padding:16px; background:var(--bg-body); display:flex; flex-direction:column; gap:12px;">
+      <!-- Chat messages will go here -->
+    </div>
+    <div style="padding:16px; background:var(--bg-card); border-top:1px solid var(--border); display:flex; gap:8px;">
+      <input type="text" id="aiChatInput" class="form-control" placeholder="Ask about patients, rooms, bills..." style="flex:1; padding:10px 14px;" onkeypress="if(event.key==='Enter') sendAiQuery()">
+      <button class="btn btn-primary" onclick="sendAiQuery()" id="aiSendBtn" style="padding:0 16px;">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      </button>
+    </div>
+  </div>
+
   <script src="/js/utils.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/keepalive.js"></script>

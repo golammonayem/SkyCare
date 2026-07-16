@@ -386,79 +386,94 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
     const query = (req.body.query || '').toLowerCase();
     let answer = '';
+    let pdfData = null;
 
-    // Advanced NLP-like pattern matching
+    const isPdf = query.match(/pdf|report|download|print/);
+
+    // Fetch departments for keyword matching
+    const [departments] = await db.query("SELECT name FROM departments");
+    const matchedDept = departments.map(d => d.name.toLowerCase()).find(d => query.includes(d));
+
     if (query.match(/doctor|doc|physician|surgeon/)) {
-      if (query.match(/leave|inactive|absent/)) {
-        const [rows] = await db.query("SELECT name FROM doctors WHERE status = 'On Leave'");
-        answer = rows.length ? `The doctors currently on leave are: **${rows.map(r=>r.name).join(', ')}**.` : "There are currently no doctors on leave.";
-      } else if (query.match(/name|list|who|all/)) {
-        const [rows] = await db.query("SELECT name, status FROM doctors");
-        answer = `Here are our doctors: \n` + rows.map(r=>`- **${r.name}** (${r.status})`).join('\n');
+      let sql = "SELECT name, status, phone, email, specialization, department_name FROM doctors";
+      let title = "Doctors List";
+      let params = [];
+      if (matchedDept) {
+        sql += " WHERE LOWER(department_name) LIKE ?";
+        params.push(`%${matchedDept}%`);
+        title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
+      } else if (query.match(/leave|inactive|absent/)) {
+        sql += " WHERE status = 'On Leave'";
+        title = "Doctors on Leave";
+      }
+      
+      const [rows] = await db.query(sql, params);
+      
+      if (isPdf) {
+        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'department_name',label:'Department'}, {key:'specialization',label:'Specialty'}, {key:'phone',label:'Phone'}, {key:'status',label:'Status'}], rows };
+        answer = `I have generated the PDF report for **${title}**. It should download automatically.`;
       } else {
-        const total = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
-        answer = `We have **${total}** active doctors. Ask me for a "list of doctors" or "who is on leave".`;
+        if (rows.length === 0) answer = `I couldn't find any doctors matching that criteria.`;
+        else if (query.match(/name|list|who|all/) || matchedDept) answer = `Here are the matching doctors:\n` + rows.map(r=>`- **${r.name}** (${r.department_name || 'No Dept'})`).join('\n');
+        else answer = `We have **${rows.length}** matching doctors. Ask me to "list them" or "make a pdf".`;
       }
     } 
     else if (query.match(/patient|pat|sick/)) {
-      if (query.match(/name|list|who|all/)) {
-        const [rows] = await db.query("SELECT name FROM patients ORDER BY id DESC LIMIT 10");
-        answer = `Here are some of our recently registered patients: \n` + rows.map(r=>`- **${r.name}**`).join('\n');
+      let sql = "SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC";
+      let title = "Patients List";
+      if (query.match(/active/)) { sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active'"; title = "Active Patients"; }
+      const [rows] = await db.query(sql);
+      
+      if (isPdf) {
+        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'blood_group',label:'Blood Group'}, {key:'gender',label:'Gender'}, {key:'phone',label:'Phone'}], rows };
+        answer = `I have generated the PDF report for **${title}**.`;
       } else {
-        const total = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
-        answer = `We have **${total}** registered patients. You can ask me to "list patients".`;
+        if (query.match(/name|list|who|all/)) answer = `Here are some patients:\n` + rows.slice(0,10).map(r=>`- **${r.name}**`).join('\n');
+        else answer = `We have **${rows.length}** registered patients. You can ask me to "make a pdf".`;
       }
     }
-    else if (query.match(/department|dept/)) {
-      const [rows] = await db.query("SELECT name FROM departments");
-      answer = `Our hospital has the following departments: \n` + rows.map(r=>`- **${r.name}**`).join('\n');
-    }
     else if (query.match(/staff|nurse/)) {
-      if (query.match(/leave/)) {
-        const [rows] = await db.query("SELECT name, role FROM staff WHERE status = 'On Leave'");
-        answer = rows.length ? `Staff on leave: \n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n') : "No staff are currently on leave.";
-      } else if (query.match(/name|list|who/)) {
-        const [rows] = await db.query("SELECT name, role FROM staff");
-        answer = `Here is our staff: \n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n');
+      let sql = "SELECT name, role, phone, status FROM staff";
+      let title = "Staff List";
+      if (query.match(/leave/)) { sql += " WHERE status = 'On Leave'"; title = "Staff on Leave"; }
+      const [rows] = await db.query(sql);
+      
+      if (isPdf) {
+        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'role',label:'Role'}, {key:'phone',label:'Phone'}, {key:'status',label:'Status'}], rows };
+        answer = `I have generated the PDF report for **${title}**.`;
       } else {
-        const total = (await fetchOne("SELECT COUNT(*) AS c FROM staff WHERE status = 'Active'"))?.c || 0;
-        answer = `We have **${total}** active staff members (excluding doctors).`;
+        if (query.match(/name|list|who/)) answer = `Here is our staff:\n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n');
+        else answer = `We have **${rows.length}** staff members.`;
       }
     }
     else if (query.match(/room|bed|capacity/)) {
-      if (query.match(/available|empty|free/)) {
-        const [rows] = await db.query("SELECT room_number, type FROM rooms WHERE status = 'Available'");
-        answer = `Available rooms: \n` + rows.map(r=>`- Room **${r.room_number}** (${r.type})`).join('\n');
+      const [rows] = await db.query("SELECT room_number, type, status FROM rooms");
+      if (isPdf) {
+        pdfData = { title: "Rooms Report", columns: [{key:'room_number',label:'Room'}, {key:'type',label:'Type'}, {key:'status',label:'Status'}], rows };
+        answer = `I have generated the Rooms PDF report.`;
       } else {
-        const available = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
-        const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
-        answer = `There are **${available}** out of ${totalRooms} rooms available right now. Ask me to "list available rooms".`;
+        if (query.match(/available|empty|free/)) {
+          const avail = rows.filter(r => r.status === 'Available');
+          answer = `Available rooms:\n` + avail.map(r=>`- Room **${r.room_number}** (${r.type})`).join('\n');
+        } else {
+          answer = `There are **${rows.filter(r => r.status === 'Available').length}** out of ${rows.length} rooms available.`;
+        }
       }
     }
     else if (query.match(/bill|money|finance|pending/)) {
-      const [rows] = await db.query("SELECT p.name, b.total_amount, b.paid_amount FROM billing b JOIN patients p ON b.patient_id = p.id WHERE b.status IN ('Pending', 'Partial')");
-      if (rows.length) {
-        answer = `We have ${rows.length} pending bills:\n` + rows.map(r=>`- **${r.name}**: Owed ৳${r.total_amount - r.paid_amount}`).join('\n');
+      const [rows] = await db.query("SELECT p.name as patient, b.total_amount, b.paid_amount, b.status FROM billing b JOIN patients p ON b.patient_id = p.id WHERE b.status IN ('Pending', 'Partial')");
+      if (isPdf) {
+        pdfData = { title: "Pending Bills", columns: [{key:'patient',label:'Patient'}, {key:'total_amount',label:'Total'}, {key:'paid_amount',label:'Paid'}, {key:'status',label:'Status'}], rows };
+        answer = `I have generated the Pending Bills PDF report.`;
       } else {
-        answer = "There are currently no pending bills.";
+        if (rows.length) answer = `We have ${rows.length} pending bills:\n` + rows.map(r=>`- **${r.patient}**: Owed ৳${r.total_amount - r.paid_amount}`).join('\n');
+        else answer = "There are currently no pending bills.";
       }
     }
-    else if (query.match(/appoint|schedule/)) {
-      const [rows] = await db.query("SELECT p.name as patient, d.name as doctor, a.appointment_time FROM appointments a JOIN patients p ON a.patient_id = p.id JOIN doctors d ON a.doctor_id = d.id WHERE a.appointment_date = CURRENT_DATE()");
-      if (rows.length) {
-        answer = `Today's appointments:\n` + rows.map(r=>`- **${r.appointment_time}**: ${r.patient} with ${r.doctor}`).join('\n');
-      } else {
-        answer = "There are no appointments scheduled for today.";
-      }
-    }
-    else if (query.match(/hi|hello|hey|greetings/)) {
-      answer = "Hello! I am your AI Assistant. I can now fetch lists of data! Try asking me: 'who are the doctors on leave', 'list available rooms', or 'pending bills'.";
-    } 
-    else if (query.match(/thank|thx|great|good|awesome/)) {
-      answer = "You're very welcome! Let me know if you need any other data.";
+    else if (query.match(/hi|hello|hey/)) {
+      answer = "Hello! I am your AI Assistant. I can now fetch filtered lists and generate PDFs! Try asking me: 'medicine doctors pdf' or 'list available rooms'.";
     } 
     else {
-      // Attempt a name/keyword search across all tables
       const like = `%${query}%`;
       const [found] = await db.query(
         `SELECT name, 'Doctor' AS type FROM doctors WHERE LOWER(name) LIKE ?
@@ -469,12 +484,12 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
       if (found.length) {
         answer = `I found these matches for your query:\n` + found.map(r => `- **${r.name}** (${r.type})`).join('\n');
       } else {
-        answer = "I couldn't find any matching records. Try asking about **patients**, **doctors**, **appointments**, **rooms**, or **bills**.";
+        answer = "I couldn't find any matching records. Try asking for a 'pdf of doctors' or 'who is on leave'.";
       }
     }
 
-    await new Promise(r => setTimeout(r, 800)); // slightly longer delay to feel like it's thinking
-    res.json({ answer });
+    await new Promise(r => setTimeout(r, 600)); 
+    res.json({ answer, pdfData });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

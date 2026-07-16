@@ -163,27 +163,22 @@ async function renderDashboard() {
   } catch (e) { showToast('Failed to load dashboard: ' + e.message, 'error'); }
 }
 
+function closeAiSidebar() {
+  document.getElementById('aiSidebar').classList.remove('active');
+  document.getElementById('aiSidebarOverlay').classList.remove('active');
+}
+
 async function generateAiSummary() {
-  openModal('AI Assistant', `
-    <div style="display:flex; flex-direction:column; height:450px; margin:-16px;">
-      <div id="aiChatArea" style="flex:1; overflow-y:auto; padding:16px; background:var(--bg); display:flex; flex-direction:column; gap:12px;">
-        <div style="text-align:center; padding:20px;" id="aiLoadingIndicator">
-          <div style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px auto;"></div>
-          <p style="color:var(--text-sec);font-size:13px;">Analyzing hospital data...</p>
-        </div>
-      </div>
-      <div style="padding:12px; background:var(--card); border-top:1px solid var(--border); display:flex; gap:8px; border-bottom-left-radius:16px; border-bottom-right-radius:16px;">
-        <input type="text" id="aiChatInput" class="form-control" placeholder="Ask about patients, rooms, bills..." style="flex:1; padding:10px 14px;" onkeypress="if(event.key==='Enter') sendAiQuery()">
-        <button class="btn btn-primary" onclick="sendAiQuery()" id="aiSendBtn" style="padding:0 16px;">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-        </button>
-      </div>
-    </div>
-  `, null);
+  document.getElementById('aiSidebar').classList.add('active');
+  document.getElementById('aiSidebarOverlay').classList.add('active');
   
-  // hide the modal's default footer to save space
-  const footer = document.getElementById('modalFooter');
-  if(footer) footer.style.display = 'none';
+  const chatArea = document.getElementById('aiChatArea');
+  chatArea.innerHTML = `
+    <div style="text-align:center; padding:20px;" id="aiLoadingIndicator">
+      <div style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px auto;"></div>
+      <p style="color:var(--text-muted);font-size:13px;">Analyzing hospital data...</p>
+    </div>
+  `;
 
   try {
     const data = await API.get('/api/ai-summary');
@@ -214,6 +209,14 @@ async function sendAiQuery() {
     const data = await API.post('/api/ai-chat', { query });
     document.getElementById(loadingId).remove();
     appendAiMessage(data.answer);
+    
+    if (data.pdfData) {
+      if (typeof downloadReportPdf === 'function') {
+        downloadReportPdf(data.pdfData);
+      } else {
+        appendAiMessage("Error: PDF generator is not loaded.");
+      }
+    }
   } catch(e) {
     document.getElementById(loadingId).remove();
     appendAiMessage(`Error: ${e.message}`);
