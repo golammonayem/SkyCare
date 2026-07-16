@@ -510,72 +510,6 @@ app.get('/api/global-search', auth, can('dashboard', 'read'), async (req, res) =
 });
 
 // ═══════════════════════════════════════════
-// ACCOUNT REQUESTS
-// ═══════════════════════════════════════════
-app.get('/api/account-requests/count', auth, can('users', 'read'), async (req, res) => {
-  try {
-    const row = await fetchOne("SELECT COUNT(*) as c FROM account_requests WHERE status = 'Pending'");
-    res.json({ count: row?.c || 0 });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/account-requests', auth, can('users', 'read'), async (req, res) => {
-  try {
-    const rows = await fetchAll("SELECT * FROM account_requests WHERE status = 'Pending' ORDER BY created_at DESC");
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/account-requests/:id/approve', auth, can('users', 'write'), async (req, res) => {
-  try {
-    const reqRow = await fetchOne("SELECT * FROM account_requests WHERE id = ? AND status = 'Pending'", [req.params.id]);
-    if (!reqRow) return res.status(404).json({ error: 'Request not found or already processed' });
-    
-    // Generate username
-    let prefix = 'staff.';
-    if (reqRow.entity_type === 'doctor') prefix = 'dr.';
-    else if (reqRow.suggested_role === 'Nurse') prefix = 'nurse.';
-    
-    const firstName = reqRow.name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-    let username = prefix + firstName;
-    
-    // Ensure unique username
-    let counter = 1;
-    let baseUsername = username;
-    while (await fetchOne("SELECT id FROM users WHERE username = ?", [username])) {
-      username = baseUsername + counter;
-      counter++;
-    }
-    
-    const password = username + '123';
-    const hash = bcrypt.hashSync(password, 10);
-    
-    await run(
-      "INSERT INTO users (username, password_hash, full_name, email, role) VALUES (?, ?, ?, ?, ?)",
-      [username, hash, reqRow.name, reqRow.email, reqRow.suggested_role]
-    );
-    
-    await run("UPDATE account_requests SET status = 'Approved' WHERE id = ?", [req.params.id]);
-    res.json({ message: 'Approved and created user', username });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/account-requests/:id/reject', auth, can('users', 'write'), async (req, res) => {
-  try {
-    await run("UPDATE account_requests SET status = 'Rejected' WHERE id = ?", [req.params.id]);
-    res.json({ message: 'Rejected' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ═══════════════════════════════════════════
 // USER MANAGEMENT (Admin only)
 // ═══════════════════════════════════════════
 app.get('/api/users', auth, can('users', 'read'), async (req, res) => {
@@ -751,20 +685,6 @@ function registerCrud(routePath, table, columns, joinSql, filterFn) {
       
       const insertId = result.insertId;
       await logAudit(req.user.id, 'CREATE', routePath, insertId, JSON.stringify(req.body));
-
-      // Auto-create Account Request for doctors and staff
-      if (table === 'doctors' || table === 'staff') {
-        const name = req.body.name || 'Unknown';
-        const email = req.body.email || null;
-        let role = 'Staff';
-        if (table === 'doctors') role = 'Junior Doctor';
-        if (table === 'staff' && req.body.role === 'Nurse') role = 'Nurse';
-        
-        await run(
-          `INSERT INTO account_requests (entity_type, entity_id, name, email, suggested_role) VALUES (?, ?, ?, ?, ?)`,
-          [table, insertId, name, email, role]
-        );
-      }
 
       res.json({ id: insertId, message: 'Created' });
     } catch (error) {

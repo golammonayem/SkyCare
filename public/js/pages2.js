@@ -530,31 +530,8 @@ async function renderUsers() {
   if (!Auth.isAdmin()) { document.getElementById('pageContent').innerHTML = `<div class="access-denied"><div class="access-denied-icon">${Icon('shield',56)}</div><h3 class="access-denied-title">Admin Only</h3></div>`; return; }
   try {
     const users = await API.get('/api/users');
-    let pendingHTML = '';
-    try {
-      const reqs = await API.get('/api/account-requests');
-      if (reqs && reqs.length > 0) {
-        pendingHTML = `<div class="section-header" style="margin-top:20px; border-bottom: 2px solid var(--accent); padding-bottom: 10px;"><h3 class="section-title" style="color:var(--accent);">Pending Account Approvals</h3></div>
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:30px;overflow:hidden;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead><tr style="background:var(--bg-table-header);border-bottom:1px solid var(--border);"><th style="padding:12px;text-align:left;">Name</th><th style="padding:12px;text-align:left;">Type</th><th style="padding:12px;text-align:left;">Role</th><th style="padding:12px;text-align:right;">Actions</th></tr></thead>
-          <tbody>
-            ${reqs.map(r => `<tr style="border-bottom:1px solid var(--border);">
-              <td style="padding:12px;"><strong>${r.name}</strong><br><span style="font-size:11px;color:var(--text-muted);">${r.email||''}</span></td>
-              <td style="padding:12px;"><span class="gsr-type ${r.entity_type}">${r.entity_type}</span></td>
-              <td style="padding:12px;">${r.suggested_role}</td>
-              <td style="padding:12px;text-align:right;">
-                <button class="btn btn-sm btn-success" style="padding:6px 12px;margin-right:8px;" onclick="approveAccountRequest(${r.id})">Approve</button>
-                <button class="btn btn-sm btn-danger" style="padding:6px 12px;" onclick="rejectAccountRequest(${r.id})">Reject</button>
-              </td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>`;
-      }
-    } catch (e) { console.error('Failed to load requests', e); }
-
     window._allUsers = users;
-    let html = pendingHTML + `<div class="section-header"><h3 class="section-title">User Accounts</h3><div class="section-actions">
+    let html = `<div class="section-header"><h3 class="section-title">User Accounts</h3><div class="section-actions">
       ${reportBtn('downloadUsersReport()', 'Report PDF')}
       <button class="btn btn-primary" onclick="showUserForm()">${Icon('plus',14)} Create User</button></div></div>`;
     html += buildTable(
@@ -566,36 +543,52 @@ async function renderUsers() {
       (row) => `${passwordBtn(`showAdminChangePasswordModal(${row.id})`)}${editBtn(`showUserForm(${row.id})`)}${deleteBtn(`deleteUser(${row.id})`)}`
     );
     document.getElementById('pageContent').innerHTML = html;
-    
-    // Also trigger badge update
-    if (typeof checkAccountRequests === 'function') checkAccountRequests();
   } catch(e) { showToast('Error: '+e.message, 'error'); }
 }
 
-async function approveAccountRequest(id) {
-  if (await confirmAction('Approve this request? A user account will be created automatically.', 'Approve', 'btn-success', 'check')) {
-    try {
-      const res = await API.post(`/api/account-requests/${id}/approve`);
-      showToast(`Account created! Username: ${res.username}`, 'success');
-      renderUsers();
-    } catch(e) { showToast(e.message, 'error'); }
-  }
-}
-
-async function rejectAccountRequest(id) {
-  if (await confirmAction('Reject this request? No user account will be created.', 'Reject', 'btn-danger', 'x')) {
-    try {
-      await API.post(`/api/account-requests/${id}/reject`);
-      showToast('Request rejected', 'success');
-      renderUsers();
-    } catch(e) { showToast(e.message, 'error'); }
-  }
+function autoFillUserForm(selectElement) {
+  if (!selectElement.value) return;
+  const opt = selectElement.options[selectElement.selectedIndex];
+  if (!opt.dataset.info) return;
+  const info = JSON.parse(opt.dataset.info);
+  
+  const form = document.getElementById('userForm');
+  let prefix = info.type === 'doctor' ? 'dr.' : (info.role === 'Nurse' ? 'nurse.' : 'staff.');
+  let words = info.name.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w && w !== 'dr' && w !== 'mr' && w !== 'mrs' && w !== 'md');
+  let firstName = words.length > 0 ? words[0] : 'user';
+  let username = prefix + firstName;
+  
+  if (form.username) form.username.value = username;
+  if (form.full_name) form.full_name.value = info.name;
+  if (form.email) form.email.value = info.email || '';
+  if (form.password) form.password.value = '123456';
+  if (form.role) form.role.value = info.role;
 }
 
 async function showUserForm(id) {
   let u = { username:'', full_name:'', email:'', role:'Staff', status:'Active' };
-  if (id) try { u = await API.get(`/api/users/${id}`); } catch(e) {}
+  let linkOptions = '';
+  if (id) {
+    try { u = await API.get(`/api/users/${id}`); } catch(e) {}
+  } else {
+    try {
+      const [doctors, staff] = await Promise.all([API.get('/api/doctors'), API.get('/api/staff')]);
+      const opts = [];
+      doctors.forEach(d => opts.push({ type: 'doctor', role: 'Junior Doctor', name: d.name, email: d.email || '' }));
+      staff.forEach(s => opts.push({ type: 'staff', role: s.role === 'Nurse' ? 'Nurse' : 'Staff', name: s.name, email: s.email || '' }));
+      
+      linkOptions = `<div class="form-group" style="margin-bottom:16px; padding:12px; background:var(--accent-light); border-radius:var(--radius-md);">
+        <label class="form-label" style="color:var(--accent); font-weight:600;">Link existing Doctor or Staff (Optional)</label>
+        <select class="form-control" onchange="autoFillUserForm(this)">
+          <option value="">-- Select a Profile to auto-fill --</option>
+          ${opts.map((o, idx) => `<option value="${idx}" data-info='${JSON.stringify(o).replace(/'/g, "&#39;")}'>${o.name} (${o.role})</option>`).join('')}
+        </select>
+      </div>`;
+    } catch(e) {}
+  }
+  
   openModal(id ? 'Edit User' : 'Create User', `<form id="userForm">
+    ${linkOptions}
     ${id ? `<div class="form-group" style="text-align:center;margin-bottom:16px;">
       <div class="upload-zone" onclick="document.getElementById('avatarInput').click()" id="avatarZone">
         ${u.avatar_url ? `<img src="${u.avatar_url}" class="upload-preview" id="avatarPreview">` : `<div class="upload-zone-icon">${Icon('camera',32)}</div>`}
