@@ -192,3 +192,14 @@ CREATE TABLE IF NOT EXISTS blood_donations (
   KEY idx_blood_status (status),
   CONSTRAINT fk_blood_donations_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS account_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entity_type VARCHAR(20) NOT NULL,
+  entity_id INT NOT NULL,
+  name VARCHAR(140) NOT NULL,
+  email VARCHAR(190),
+  suggested_role ENUM('Admin','Senior Doctor','Junior Doctor','Nurse','Staff') NOT NULL,
+  status ENUM('Pending', 'Approved', 'Rejected') NOT NULL DEFAULT 'Pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

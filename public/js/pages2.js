@@ -530,8 +530,31 @@ async function renderUsers() {
   if (!Auth.isAdmin()) { document.getElementById('pageContent').innerHTML = `<div class="access-denied"><div class="access-denied-icon">${Icon('shield',56)}</div><h3 class="access-denied-title">Admin Only</h3></div>`; return; }
   try {
     const users = await API.get('/api/users');
+    let pendingHTML = '';
+    try {
+      const reqs = await API.get('/api/account-requests');
+      if (reqs && reqs.length > 0) {
+        pendingHTML = `<div class="section-header" style="margin-top:20px; border-bottom: 2px solid var(--accent); padding-bottom: 10px;"><h3 class="section-title" style="color:var(--accent);">Pending Account Approvals</h3></div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:30px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:var(--bg-table-header);border-bottom:1px solid var(--border);"><th style="padding:12px;text-align:left;">Name</th><th style="padding:12px;text-align:left;">Type</th><th style="padding:12px;text-align:left;">Role</th><th style="padding:12px;text-align:right;">Actions</th></tr></thead>
+          <tbody>
+            ${reqs.map(r => `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:12px;"><strong>${r.name}</strong><br><span style="font-size:11px;color:var(--text-muted);">${r.email||''}</span></td>
+              <td style="padding:12px;"><span class="gsr-type ${r.entity_type}">${r.entity_type}</span></td>
+              <td style="padding:12px;">${r.suggested_role}</td>
+              <td style="padding:12px;text-align:right;">
+                <button class="btn btn-sm btn-success" style="padding:6px 12px;margin-right:8px;" onclick="approveAccountRequest(${r.id})">Approve</button>
+                <button class="btn btn-sm btn-danger" style="padding:6px 12px;" onclick="rejectAccountRequest(${r.id})">Reject</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`;
+      }
+    } catch (e) { console.error('Failed to load requests', e); }
+
     window._allUsers = users;
-    let html = `<div class="section-header"><h3 class="section-title">User Accounts</h3><div class="section-actions">
+    let html = pendingHTML + `<div class="section-header"><h3 class="section-title">User Accounts</h3><div class="section-actions">
       ${reportBtn('downloadUsersReport()', 'Report PDF')}
       <button class="btn btn-primary" onclick="showUserForm()">${Icon('plus',14)} Create User</button></div></div>`;
     html += buildTable(
@@ -543,7 +566,30 @@ async function renderUsers() {
       (row) => `${passwordBtn(`showAdminChangePasswordModal(${row.id})`)}${editBtn(`showUserForm(${row.id})`)}${deleteBtn(`deleteUser(${row.id})`)}`
     );
     document.getElementById('pageContent').innerHTML = html;
+    
+    // Also trigger badge update
+    if (typeof checkAccountRequests === 'function') checkAccountRequests();
   } catch(e) { showToast('Error: '+e.message, 'error'); }
+}
+
+async function approveAccountRequest(id) {
+  if (await confirmAction('Approve this request? A user account will be created automatically.')) {
+    try {
+      const res = await API.post(`/api/account-requests/${id}/approve`);
+      showToast(`Account created! Username: ${res.username}`, 'success');
+      renderUsers();
+    } catch(e) { showToast(e.message, 'error'); }
+  }
+}
+
+async function rejectAccountRequest(id) {
+  if (await confirmAction('Reject this request? No user account will be created.')) {
+    try {
+      await API.post(`/api/account-requests/${id}/reject`);
+      showToast('Request rejected', 'success');
+      renderUsers();
+    } catch(e) { showToast(e.message, 'error'); }
+  }
 }
 
 async function showUserForm(id) {

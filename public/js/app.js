@@ -169,6 +169,25 @@ document.addEventListener('click', (e) => {
   }
 });
 
+/* ── Polling & Notifications ── */
+async function checkAccountRequests() {
+  const badge = document.getElementById('accountReqBadge');
+  if (!badge) return;
+  try {
+    const { count } = await API.get('/api/account-requests/count');
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (e) {
+    // silently fail
+  }
+}
+setInterval(checkAccountRequests, 15000); // Check every 15s
+setTimeout(checkAccountRequests, 1000); // Initial check
+
 /* ── Clock ── */
 function updateClock() {
   const now = new Date();
