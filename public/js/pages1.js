@@ -123,7 +123,9 @@ async function renderDashboard() {
     if (s.totalStaff !== undefined) cards.push({ icon:'usersRound', val:s.totalStaff, lbl:'Active Staff' });
     if (s.totalUsers !== undefined) cards.push({ icon:'shield', val:s.totalUsers, lbl:'Total System Users' });
 
-    let html = `<div class="section-header"><h3 class="section-title">Executive Dashboard</h3><div class="section-actions">${reportBtn('downloadDashboardReport()', 'Dashboard PDF')}</div></div>`;
+    let html = `<div class="section-header"><h3 class="section-title">Executive Dashboard</h3><div class="section-actions">
+      ${Auth.isAdmin() ? `<button class="btn btn-primary" onclick="generateAiSummary()" style="background:var(--gradient);border:none;box-shadow:0 4px 12px rgba(37,99,235,0.3);gap:6px;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg> AI Summary</button>` : ''}
+      ${reportBtn('downloadDashboardReport()', 'Dashboard PDF')}</div></div>`;
     html += cards.length
       ? `<div class="stats-grid">${cards.map(c => `
         <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon">${Icon(c.icon, 22)}</div></div>
@@ -159,6 +161,39 @@ async function renderDashboard() {
     if (panels.length) html += `<div class="dashboard-grid">${panels.join('')}</div>`;
     document.getElementById('pageContent').innerHTML = html;
   } catch (e) { showToast('Failed to load dashboard: ' + e.message, 'error'); }
+}
+
+async function generateAiSummary() {
+  openModal('AI Smart Summary', `<div style="padding:32px 20px; text-align:center;" id="aiSummaryContent">
+    <div style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px auto;"></div>
+    <p style="color:var(--text-sec);font-weight:500;">AI is analyzing hospital data...</p>
+    <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">This might take a moment.</p>
+  </div>`, null);
+
+  try {
+    const data = await API.get('/api/ai-summary');
+    const formattedSummary = data.summary
+      .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text);">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n\n/g, '</p><p style="margin-bottom:12px;">')
+      .replace(/\n/g, '<br>');
+
+    document.getElementById('aiSummaryContent').innerHTML = `
+      <div style="text-align:left; background:var(--card); border-radius:12px; padding:24px; border:1px solid var(--border); line-height:1.6; color:var(--text-sec); box-shadow:0 4px 20px rgba(0,0,0,0.03);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;color:var(--accent);">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg>
+          <h4 style="color:var(--text);font-size:16px;margin:0;">Analysis Complete</h4>
+        </div>
+        <p style="margin-bottom:12px;font-size:14px;">${formattedSummary}</p>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('aiSummaryContent').innerHTML = `
+      <div class="login-error show" style="justify-content:center; margin:0;">
+        <span style="display:flex;align-items:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Failed to generate summary: ${e.message}</span>
+      </div>
+    `;
+  }
 }
 
 /* ── Departments Page ── */

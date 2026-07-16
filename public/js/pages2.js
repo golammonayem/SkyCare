@@ -540,7 +540,7 @@ async function renderUsers() {
        {key:'status',label:'Status',render:v=>statusBadge(v)},
        {key:'last_login',label:'Last Login',render:v=>v?v.replace('T',' ').substring(0,16):'Never'}],
       users,
-      (row) => `${editBtn(`showUserForm(${row.id})`)}${deleteBtn(`deleteUser(${row.id})`)}`
+      (row) => `${passwordBtn(`showAdminChangePasswordModal(${row.id})`)}${editBtn(`showUserForm(${row.id})`)}${deleteBtn(`deleteUser(${row.id})`)}`
     );
     document.getElementById('pageContent').innerHTML = html;
   } catch(e) { showToast('Error: '+e.message, 'error'); }
@@ -636,4 +636,31 @@ async function renderAuditLog() {
     );
     document.getElementById('pageContent').innerHTML = html;
   } catch(e) { showToast('Error: '+e.message, 'error'); }
+}
+
+async function showAdminChangePasswordModal(userId) {
+  openModal('Change User Password', `
+    <form id="adminPasswordForm" autocomplete="off">
+      <div class="form-group">
+        <label class="form-label">New Password *</label>
+        <div class="password-field-wrap">
+          <input id="admin_new_password" name="password" type="password" class="form-control" placeholder="Minimum 6 characters" autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="toggleModalPassword('admin_new_password', this)" aria-label="Show password">${Icon('eye', 16)}</button>
+        </div>
+      </div>
+    </form>`, async () => {
+    const data = getFormData('adminPasswordForm');
+    if (!data.password || data.password.length < 6) {
+      showToast('Password must be at least 6 characters', 'error');
+      return;
+    }
+    try {
+      await API.put('/api/users/' + userId, { password: data.password });
+      closeModal();
+      showToast('User password updated successfully', 'success');
+      renderUsers();
+    } catch(e) {
+      showToast(e.message, 'error');
+    }
+  });
 }

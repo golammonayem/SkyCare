@@ -128,6 +128,7 @@ function searchBoxHtml(id, placeholder, oninput) {
 
 /* Helper for action buttons with SVG icons */
 function editBtn(onclick) { return `<button class="action-btn edit" onclick="${onclick}" title="Edit">${Icon('edit', 14)}</button>`; }
+function passwordBtn(onclick) { return `<button class="action-btn edit" onclick="${onclick}" title="Change Password" style="background:var(--warning-light);color:var(--warning)">${Icon('key', 14)}</button>`; }
 function deleteBtn(onclick) { return `<button class="action-btn delete" onclick="${onclick}" title="Delete">${Icon('trash', 14)}</button>`; }
 function viewBtn(onclick, title='View') { return `<button class="action-btn view" onclick="${onclick}" title="${title}">${Icon('eye', 14)}</button>`; }
 function scheduleBtn(onclick) { return `<button class="action-btn view" onclick="${onclick}" title="Schedule">${Icon('calendar', 14)}</button>`; }

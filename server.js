@@ -349,6 +349,39 @@ app.get('/api/dashboard', auth, can('dashboard', 'read'), async (req, res) => {
   }
 });
 
+app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
+  try {
+    const totalPatients = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
+    const totalDoctors = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
+    const availableRooms = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
+    const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
+    const activeAdmissions = (await fetchOne("SELECT COUNT(*) AS c FROM admissions WHERE status = 'Admitted'"))?.c || 0;
+    const pendingBills = (await fetchOne("SELECT COUNT(*) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+    const totalBillsVal = (await fetchOne("SELECT SUM(total_amount - paid_amount) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+
+    const occupancyRate = totalRooms > 0 ? Math.round((totalRooms - availableRooms) / totalRooms * 100) : 0;
+    
+    let summary = `**Hospital Executive Summary:**\n\n`;
+    summary += `Currently, the hospital is operating at **${occupancyRate}%** room capacity, with **${activeAdmissions}** active admissions and **${availableRooms}** rooms available for new patients.\n\n`;
+    summary += `We have **${totalDoctors}** active doctors serving a total registered patient base of **${totalPatients}**.\n\n`;
+    
+    if (pendingBills > 0) {
+      summary += `**Financial Alert:** There are ${pendingBills} pending bills totaling approximately ৳${Number(totalBillsVal).toLocaleString()}, which may require follow-up.\n\n`;
+    } else {
+      summary += `**Financial Status:** All billing appears to be up to date with no pending invoices.\n\n`;
+    }
+    
+    summary += `*Recommendation:* ${occupancyRate > 80 ? 'High occupancy detected. Consider expediting discharges and preparing emergency overflow beds.' : 'Occupancy is stable. Normal operations can continue.'}`;
+
+    // Simulate AI thinking delay for UX
+    await new Promise(r => setTimeout(r, 1200));
+
+    res.json({ summary });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ═══════════════════════════════════════════
 // USER MANAGEMENT (Admin only)
 // ═══════════════════════════════════════════
