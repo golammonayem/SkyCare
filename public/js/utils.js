@@ -314,7 +314,7 @@ function downloadBillingInvoicePdf(invoice) {
 }
 
 /* ── Confirm Dialog ── */
-function confirmAction(message) {
+function confirmAction(message, confirmText = 'Delete', confirmClass = 'btn-danger', confirmIconName = 'trash') {
   return new Promise(resolve => {
     openModal('Confirm Action', `
       <div style="text-align:center;padding:8px 0;">
@@ -324,7 +324,7 @@ function confirmAction(message) {
       </div>
       <div class="confirm-actions">
         <button class="btn btn-secondary" onclick="closeModal();window._confirmResolve(false)">Cancel</button>
-        <button class="btn btn-danger" onclick="closeModal();window._confirmResolve(true)">${Icon('trash', 14)} Delete</button>
+        <button class="btn ${confirmClass}" onclick="closeModal();window._confirmResolve(true)">${confirmIconName ? Icon(confirmIconName, 14) + ' ' : ''}${confirmText}</button>
       </div>
     `, null);
     window._confirmResolve = (val) => resolve(val);

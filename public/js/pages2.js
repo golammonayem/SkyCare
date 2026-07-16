@@ -573,7 +573,7 @@ async function renderUsers() {
 }
 
 async function approveAccountRequest(id) {
-  if (await confirmAction('Approve this request? A user account will be created automatically.')) {
+  if (await confirmAction('Approve this request? A user account will be created automatically.', 'Approve', 'btn-success', 'check')) {
     try {
       const res = await API.post(`/api/account-requests/${id}/approve`);
       showToast(`Account created! Username: ${res.username}`, 'success');
@@ -583,7 +583,7 @@ async function approveAccountRequest(id) {
 }
 
 async function rejectAccountRequest(id) {
-  if (await confirmAction('Reject this request? No user account will be created.')) {
+  if (await confirmAction('Reject this request? No user account will be created.', 'Reject', 'btn-danger', 'x')) {
     try {
       await API.post(`/api/account-requests/${id}/reject`);
       showToast('Request rejected', 'success');
