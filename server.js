@@ -458,11 +458,52 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
       answer = "You're very welcome! Let me know if you need any other data.";
     } 
     else {
-      answer = "I couldn't quite find what you're looking for. Try asking me something like:\n- *'list doctors on leave'*\n- *'show available rooms'*\n- *'who has pending bills'*\n- *'today's appointments'*";
+      // Attempt a name/keyword search across all tables
+      const like = `%${query}%`;
+      const [found] = await db.query(
+        `SELECT name, 'Doctor' AS type FROM doctors WHERE LOWER(name) LIKE ?
+         UNION SELECT name, 'Patient' AS type FROM patients WHERE LOWER(name) LIKE ?
+         UNION SELECT name, 'Staff' AS type FROM staff WHERE LOWER(name) LIKE ?
+         LIMIT 5`, [like, like, like]
+      );
+      if (found.length) {
+        answer = `I found these matches for your query:\n` + found.map(r => `- **${r.name}** (${r.type})`).join('\n');
+      } else {
+        answer = "I couldn't find any matching records. Try asking about **patients**, **doctors**, **appointments**, **rooms**, or **bills**.";
+      }
     }
 
     await new Promise(r => setTimeout(r, 800)); // slightly longer delay to feel like it's thinking
     res.json({ answer });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/global-search', auth, can('dashboard', 'read'), async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q || q.length < 2) return res.json([]);
+    const like = `%${q}%`;
+
+    const [doctors] = await db.query(
+      `SELECT id, name, specialization AS detail, phone, email, status, 'doctor' AS type
+       FROM doctors WHERE name LIKE ? OR email LIKE ? OR phone LIKE ? LIMIT 10`, [like, like, like]
+    );
+    const [patients] = await db.query(
+      `SELECT id, name, blood_group AS detail, phone, email, 'Active' AS status, 'patient' AS type
+       FROM patients WHERE name LIKE ? OR email LIKE ? OR phone LIKE ? LIMIT 10`, [like, like, like]
+    );
+    const [staff] = await db.query(
+      `SELECT id, name, role AS detail, phone, email, status, 'staff' AS type
+       FROM staff WHERE name LIKE ? OR email LIKE ? OR phone LIKE ? LIMIT 10`, [like, like, like]
+    );
+    const [users] = await db.query(
+      `SELECT id, full_name AS name, role AS detail, '' AS phone, email, status, 'user' AS type
+       FROM users WHERE full_name LIKE ? OR email LIKE ? OR username LIKE ? LIMIT 10`, [like, like, like]
+    );
+
+    res.json([...doctors, ...patients, ...staff, ...users]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

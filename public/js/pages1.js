@@ -309,7 +309,13 @@ async function deleteDepartment(id) {
 async function renderDoctors() {
   try {
     const doctors = await API.get('/api/doctors');
+    let depts = []; try { depts = await API.get('/api/departments'); } catch(e) {}
+    window._allDeptsList = depts;
     let html = `<div class="section-header"><h3 class="section-title">All Doctors</h3><div class="section-actions">
+      <select id="deptFilter" class="form-control" style="width:180px;padding:7px 32px 7px 10px;font-size:12px;border-radius:var(--radius-full);" onchange="filterDoctors()">
+        <option value="">All Departments</option>
+        ${depts.map(d => `<option value="${d.name}">${d.name}</option>`).join('')}
+      </select>
       ${searchBoxHtml('doctorSearch','Search doctors...','filterDoctors()')}
       ${reportBtn('downloadDoctorsReport()', 'Report PDF')}
       ${ifCanWrite('doctors', `<button class="btn btn-primary" onclick="showDoctorForm()">${Icon('plus',14)} Add Doctor</button>`)}</div></div>`;
@@ -331,7 +337,10 @@ function buildDoctorsTable(doctors) {
 
 function filterDoctors() {
   const q = document.getElementById('doctorSearch').value.toLowerCase();
-  const filtered = (window._allDoctors||[]).filter(d => d.name.toLowerCase().includes(q)||(d.specialization||'').toLowerCase().includes(q));
+  const dept = document.getElementById('deptFilter') ? document.getElementById('deptFilter').value : '';
+  let filtered = (window._allDoctors||[]);
+  if (dept) filtered = filtered.filter(d => (d.department_name||'') === dept);
+  if (q) filtered = filtered.filter(d => d.name.toLowerCase().includes(q)||(d.specialization||'').toLowerCase().includes(q));
   document.getElementById('doctorsTable').innerHTML = buildDoctorsTable(filtered);
 }
 
