@@ -124,7 +124,7 @@ async function renderDashboard() {
     if (s.totalUsers !== undefined) cards.push({ icon:'shield', val:s.totalUsers, lbl:'Total System Users' });
 
     let html = `<div class="section-header"><h3 class="section-title">Executive Dashboard</h3><div class="section-actions">
-      ${Auth.isAdmin() ? `<button class="btn btn-primary" onclick="generateAiSummary()" style="background:var(--gradient);border:none;box-shadow:0 4px 12px rgba(37,99,235,0.3);gap:6px;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg> AI Summary</button>` : ''}
+      ${Auth.isAdmin() ? `<button class="btn btn-primary" onclick="generateAiSummary()" style="background:#2563EB;color:#fff;border:none;box-shadow:0 4px 12px rgba(37,99,235,0.3);gap:6px;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg> AI Assistant</button>` : ''}
       ${reportBtn('downloadDashboardReport()', 'Dashboard PDF')}</div></div>`;
     html += cards.length
       ? `<div class="stats-grid">${cards.map(c => `
