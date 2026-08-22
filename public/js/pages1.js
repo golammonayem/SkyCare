@@ -194,6 +194,13 @@ async function generateAiSummary() {
   document.getElementById('aiSidebar').classList.add('active');
   document.getElementById('aiSidebarOverlay').classList.add('active');
   setAiStatus('loading', 'Checking Gemini...');
+
+  try {
+    const status = await API.get('/api/ai-status');
+    setAiStatus(status.source === 'gemini' ? 'gemini' : 'fallback', status.source === 'gemini' ? 'Gemini active' : 'Fallback mode');
+  } catch (_) {
+    setAiStatus('fallback', 'Fallback mode');
+  }
   
   const chatArea = document.getElementById('aiChatArea');
   chatArea.innerHTML = `

@@ -753,6 +753,17 @@ app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
   }
 });
 
+app.get('/api/ai-status', auth, can('dashboard', 'read'), async (req, res) => {
+  try {
+    res.json({
+      source: geminiConfigured ? 'gemini' : 'fallback',
+      geminiConfigured
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
     const context = await buildAiChatContext(req.body.query || '');
