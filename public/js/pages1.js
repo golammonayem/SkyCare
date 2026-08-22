@@ -168,9 +168,32 @@ function closeAiSidebar() {
   document.getElementById('aiSidebarOverlay').classList.remove('active');
 }
 
+function setAiStatus(mode, label) {
+  const badge = document.getElementById('aiStatusBadge');
+  if (!badge) return;
+
+  badge.classList.remove('ai-status-loading', 'ai-status-gemini', 'ai-status-fallback');
+
+  if (mode === 'gemini') {
+    badge.classList.add('ai-status-gemini');
+    badge.textContent = label || 'Gemini active';
+    return;
+  }
+
+  if (mode === 'fallback') {
+    badge.classList.add('ai-status-fallback');
+    badge.textContent = label || 'Fallback mode';
+    return;
+  }
+
+  badge.classList.add('ai-status-loading');
+  badge.textContent = label || 'Checking Gemini...';
+}
+
 async function generateAiSummary() {
   document.getElementById('aiSidebar').classList.add('active');
   document.getElementById('aiSidebarOverlay').classList.add('active');
+  setAiStatus('loading', 'Checking Gemini...');
   
   const chatArea = document.getElementById('aiChatArea');
   chatArea.innerHTML = `
@@ -184,10 +207,12 @@ async function generateAiSummary() {
     const data = await API.get('/api/ai-summary');
     const loading = document.getElementById('aiLoadingIndicator');
     if(loading) loading.remove();
+    setAiStatus(data.source === 'gemini' ? 'gemini' : 'fallback', data.source === 'gemini' ? 'Gemini active' : 'Fallback mode');
     appendAiMessage(data.summary);
   } catch (e) {
     const loading = document.getElementById('aiLoadingIndicator');
     if(loading) loading.remove();
+    setAiStatus('fallback', 'Fallback mode');
     appendAiMessage(`Error: ${e.message}`);
   }
 }
@@ -204,10 +229,12 @@ async function sendAiQuery() {
   btn.disabled = true;
   
   const loadingId = appendAiLoading();
+  setAiStatus('loading', 'Checking Gemini...');
   
   try {
     const data = await API.post('/api/ai-chat', { query });
     document.getElementById(loadingId).remove();
+    setAiStatus(data.source === 'gemini' ? 'gemini' : 'fallback', data.source === 'gemini' ? 'Gemini active' : 'Fallback mode');
     appendAiMessage(data.answer);
     
     if (data.pdfData) {
@@ -219,6 +246,7 @@ async function sendAiQuery() {
     }
   } catch(e) {
     document.getElementById(loadingId).remove();
+    setAiStatus('fallback', 'Fallback mode');
     appendAiMessage(`Error: ${e.message}`);
   }
   

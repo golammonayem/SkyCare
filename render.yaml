@@ -30,3 +30,7 @@ services:
         sync: false
       - key: CLOUDINARY_FOLDER
         value: skycare/avatars
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash

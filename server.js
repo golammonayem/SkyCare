@@ -18,6 +18,10 @@ const cloudinaryConfigured = Boolean(
   process.env.CLOUDINARY_API_SECRET
 );
 
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const geminiConfigured = Boolean(geminiApiKey);
+
 if (cloudinaryConfigured) {
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -27,6 +31,10 @@ if (cloudinaryConfigured) {
   });
 } else {
   console.warn('[SkyCare] Cloudinary credentials are missing. Avatar uploads will be unavailable.');
+}
+
+if (!geminiConfigured) {
+  console.warn('[SkyCare] Gemini API key is missing. The AI assistant will use the database fallback only.');
 }
 
 const upload = multer({
@@ -79,6 +87,378 @@ function uploadAvatarToCloudinary(fileBuffer, userId) {
     );
     stream.end(fileBuffer);
   });
+}
+
+function postJsonRequest(urlString, payload) {
+  return new Promise((resolve, reject) => {
+    const requestBody = JSON.stringify(payload);
+    const request = https.request(urlString, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(requestBody)
+      }
+    }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      response.on('end', () => {
+        let parsed = {};
+        if (responseBody) {
+          try {
+            parsed = JSON.parse(responseBody);
+          } catch (error) {
+            reject(new Error(`Gemini returned invalid JSON: ${error.message}`));
+            return;
+          }
+        }
+
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
+          resolve(parsed);
+          return;
+        }
+
+        reject(new Error(parsed?.error?.message || parsed?.message || `Gemini request failed with status ${response.statusCode}`));
+      });
+    });
+
+    request.on('error', reject);
+    request.write(requestBody);
+    request.end();
+  });
+}
+
+function extractGeminiText(response) {
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map((part) => part.text || '').join('').trim();
+  if (text) return text;
+  const blockReason = response?.promptFeedback?.blockReason;
+  throw new Error(blockReason ? `Gemini blocked the request: ${blockReason}` : 'Gemini returned an empty response');
+}
+
+async function callGemini({ systemInstruction, prompt, temperature = 0.2, maxOutputTokens = 512 }) {
+  if (!geminiConfigured) {
+    throw new Error('Gemini API key is not configured');
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+  const payload = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }]
+      }
+    ],
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+      topP: 0.95,
+      topK: 40
+    }
+  };
+
+  if (systemInstruction) {
+    payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const response = await postJsonRequest(endpoint, payload);
+  return extractGeminiText(response);
+}
+
+function compactRows(rows, fields, limit = 6) {
+  return (rows || []).slice(0, limit).map((row) => {
+    const compactRow = {};
+    for (const field of fields) {
+      compactRow[field] = row[field];
+    }
+    return compactRow;
+  });
+}
+
+async function getDashboardAiContext() {
+  const totalPatients = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
+  const totalDoctors = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
+  const availableRooms = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
+  const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
+  const activeAdmissions = (await fetchOne("SELECT COUNT(*) AS c FROM admissions WHERE status = 'Admitted'"))?.c || 0;
+  const pendingBills = (await fetchOne("SELECT COUNT(*) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+  const totalBillsVal = (await fetchOne("SELECT SUM(total_amount - paid_amount) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+
+  const occupancyRate = totalRooms > 0 ? Math.round(((totalRooms - availableRooms) / totalRooms) * 100) : 0;
+  const recentAdmissions = await fetchAll(
+    `SELECT p.name AS patient_name, r.room_number, d.name AS doctor_name, a.status
+     FROM admissions a
+     LEFT JOIN patients p ON a.patient_id = p.id
+     LEFT JOIN rooms r ON a.room_id = r.id
+     LEFT JOIN doctors d ON a.doctor_id = d.id
+     ORDER BY a.id DESC
+     LIMIT 5`
+  );
+  const todayAppointments = await fetchAll(
+    `SELECT p.name AS patient_name, d.name AS doctor_name, ap.appointment_time, ap.status
+     FROM appointments ap
+     LEFT JOIN patients p ON ap.patient_id = p.id
+     LEFT JOIN doctors d ON ap.doctor_id = d.id
+     WHERE ap.appointment_date = CURDATE()
+     ORDER BY ap.appointment_time
+     LIMIT 5`
+  );
+  const bloodSummary = await fetchAll(
+    `SELECT blood_group, COALESCE(SUM(units), 0) AS total_units
+     FROM blood_donations
+     WHERE status = 'Available'
+     GROUP BY blood_group`
+  );
+
+  return {
+    stats: {
+      totalPatients,
+      totalDoctors,
+      availableRooms,
+      totalRooms,
+      activeAdmissions,
+      pendingBills,
+      totalBillsVal,
+      occupancyRate
+    },
+    recentAdmissions: compactRows(recentAdmissions, ['patient_name', 'room_number', 'doctor_name', 'status']),
+    todayAppointments: compactRows(todayAppointments, ['patient_name', 'doctor_name', 'appointment_time', 'status']),
+    bloodSummary: compactRows(bloodSummary, ['blood_group', 'total_units'])
+  };
+}
+
+function buildLegacyDashboardSummary(context) {
+  const s = context.stats || {};
+  let summary = `**Hospital Executive Summary:**\n\n`;
+  summary += `Currently, the hospital is operating at **${s.occupancyRate || 0}%** room capacity, with **${s.activeAdmissions || 0}** active admissions and **${s.availableRooms || 0}** rooms available for new patients.\n\n`;
+  summary += `We have **${s.totalDoctors || 0}** active doctors serving a total registered patient base of **${s.totalPatients || 0}**.\n\n`;
+
+  if ((s.pendingBills || 0) > 0) {
+    summary += `**Financial Alert:** There are ${s.pendingBills} pending bills totaling approximately ৳${Number(s.totalBillsVal || 0).toLocaleString()}, which may require follow-up.\n\n`;
+  } else {
+    summary += `**Financial Status:** All billing appears to be up to date with no pending invoices.\n\n`;
+  }
+
+  summary += `*Recommendation:* ${(s.occupancyRate || 0) > 80 ? 'High occupancy detected. Consider expediting discharges and preparing emergency overflow beds.' : 'Occupancy is stable. Normal operations can continue.'}`;
+  return summary;
+}
+
+function buildDashboardGeminiPrompt(context) {
+  return [
+    'Summarize the current hospital dashboard in a concise, executive-friendly way.',
+    'Focus on occupancy, staffing, admissions, billing risk, and any actionable recommendation.',
+    'Use Markdown and keep the answer to 4 short paragraphs or fewer.',
+    '',
+    `Database context:\n${JSON.stringify(context, null, 2)}`
+  ].join('\n');
+}
+
+async function buildAiChatContext(query) {
+  const normalizedQuery = (query || '').trim();
+  const lowerQuery = normalizedQuery.toLowerCase();
+  const isPdf = /pdf|report|download|print/.test(lowerQuery);
+  const context = {
+    query: normalizedQuery,
+    topic: 'general',
+    isPdf,
+    title: '',
+    rows: [],
+    legacyAnswer: '',
+    pdfData: null
+  };
+
+  const [departments] = await db.query('SELECT name FROM departments');
+  const matchedDept = departments.map((d) => d.name.toLowerCase()).find((name) => lowerQuery.includes(name)) || null;
+  context.matchedDept = matchedDept;
+
+  if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
+    let sql = 'SELECT name, status, phone, email, specialization, department_name FROM doctors';
+    let params = [];
+    context.topic = 'doctors';
+    context.title = 'Doctors List';
+
+    if (matchedDept) {
+      sql += ' WHERE LOWER(department_name) LIKE ?';
+      params.push(`%${matchedDept}%`);
+      context.title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
+    } else if (lowerQuery.match(/leave|inactive|absent/)) {
+      sql += " WHERE status = 'On Leave'";
+      context.title = 'Doctors on Leave';
+    }
+
+    const [rows] = await db.query(sql, params);
+    context.rows = rows;
+
+    if (isPdf) {
+      context.pdfData = {
+        title: context.title,
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'department_name', label: 'Department' },
+          { key: 'specialization', label: 'Specialty' },
+          { key: 'phone', label: 'Phone' },
+          { key: 'status', label: 'Status' }
+        ],
+        rows
+      };
+      context.legacyAnswer = `I have generated the PDF report for **${context.title}**. It should download automatically.`;
+    } else if (rows.length === 0) {
+      context.legacyAnswer = `I couldn't find any doctors matching that criteria.`;
+    } else if (lowerQuery.match(/name|list|who|all/) || matchedDept) {
+      context.legacyAnswer = `Here are the matching doctors:\n` + rows.map((row) => `- **${row.name}** (${row.department_name || 'No Dept'})`).join('\n');
+    } else {
+      context.legacyAnswer = `We have **${rows.length}** matching doctors. Ask me to \"list them\" or \"make a pdf\".`;
+    }
+  } else if (lowerQuery.match(/patient|pat|sick/)) {
+    let sql = 'SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC';
+    let title = 'Patients List';
+    context.topic = 'patients';
+
+    if (lowerQuery.match(/active/)) {
+      sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active'";
+      title = 'Active Patients';
+    }
+
+    const [rows] = await db.query(sql);
+    context.rows = rows;
+    context.title = title;
+
+    if (isPdf) {
+      context.pdfData = {
+        title,
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'blood_group', label: 'Blood Group' },
+          { key: 'gender', label: 'Gender' },
+          { key: 'phone', label: 'Phone' }
+        ],
+        rows
+      };
+      context.legacyAnswer = `I have generated the PDF report for **${title}**.`;
+    } else if (lowerQuery.match(/name|list|who|all/)) {
+      context.legacyAnswer = `Here are some patients:\n` + rows.slice(0, 10).map((row) => `- **${row.name}**`).join('\n');
+    } else {
+      context.legacyAnswer = `We have **${rows.length}** registered patients. You can ask me to \"make a pdf\".`;
+    }
+  } else if (lowerQuery.match(/staff|nurse/)) {
+    let sql = 'SELECT name, role, phone, status FROM staff';
+    let title = 'Staff List';
+    context.topic = 'staff';
+
+    if (lowerQuery.match(/leave/)) {
+      sql += " WHERE status = 'On Leave'";
+      title = 'Staff on Leave';
+    }
+
+    const [rows] = await db.query(sql);
+    context.rows = rows;
+    context.title = title;
+
+    if (isPdf) {
+      context.pdfData = {
+        title,
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'role', label: 'Role' },
+          { key: 'phone', label: 'Phone' },
+          { key: 'status', label: 'Status' }
+        ],
+        rows
+      };
+      context.legacyAnswer = `I have generated the PDF report for **${title}**.`;
+    } else if (lowerQuery.match(/name|list|who/)) {
+      context.legacyAnswer = `Here is our staff:\n` + rows.map((row) => `- **${row.name}** (${row.role})`).join('\n');
+    } else {
+      context.legacyAnswer = `We have **${rows.length}** staff members.`;
+    }
+  } else if (lowerQuery.match(/room|bed|capacity/)) {
+    const [rows] = await db.query('SELECT room_number, type, status FROM rooms');
+    context.topic = 'rooms';
+    context.rows = rows;
+    context.title = 'Rooms Report';
+
+    if (isPdf) {
+      context.pdfData = {
+        title: 'Rooms Report',
+        columns: [
+          { key: 'room_number', label: 'Room' },
+          { key: 'type', label: 'Type' },
+          { key: 'status', label: 'Status' }
+        ],
+        rows
+      };
+      context.legacyAnswer = 'I have generated the Rooms PDF report.';
+    } else if (lowerQuery.match(/available|empty|free/)) {
+      const availableRooms = rows.filter((row) => row.status === 'Available');
+      context.legacyAnswer = `Available rooms:\n` + availableRooms.map((row) => `- Room **${row.room_number}** (${row.type})`).join('\n');
+    } else {
+      context.legacyAnswer = `There are **${rows.filter((row) => row.status === 'Available').length}** out of ${rows.length} rooms available.`;
+    }
+  } else if (lowerQuery.match(/bill|money|finance|pending/)) {
+    const [rows] = await db.query("SELECT p.name as patient, b.total_amount, b.paid_amount, b.status FROM billing b JOIN patients p ON b.patient_id = p.id WHERE b.status IN ('Pending', 'Partial')");
+    context.topic = 'billing';
+    context.rows = rows;
+    context.title = 'Pending Bills';
+
+    if (isPdf) {
+      context.pdfData = {
+        title: 'Pending Bills',
+        columns: [
+          { key: 'patient', label: 'Patient' },
+          { key: 'total_amount', label: 'Total' },
+          { key: 'paid_amount', label: 'Paid' },
+          { key: 'status', label: 'Status' }
+        ],
+        rows
+      };
+      context.legacyAnswer = 'I have generated the Pending Bills PDF report.';
+    } else if (rows.length) {
+      context.legacyAnswer = `We have ${rows.length} pending bills:\n` + rows.map((row) => `- **${row.patient}**: Owed ৳${row.total_amount - row.paid_amount}`).join('\n');
+    } else {
+      context.legacyAnswer = 'There are currently no pending bills.';
+    }
+  } else if (lowerQuery.match(/hi|hello|hey/)) {
+    context.topic = 'greeting';
+    context.legacyAnswer = 'Hello! I am your AI Assistant. I can now fetch filtered lists and generate PDFs! Try asking me: "medicine doctors pdf" or "list available rooms".';
+  } else {
+    const like = `%${lowerQuery}%`;
+    const [found] = await db.query(
+      `SELECT name, 'Doctor' AS type FROM doctors WHERE LOWER(name) LIKE ?
+       UNION SELECT name, 'Patient' AS type FROM patients WHERE LOWER(name) LIKE ?
+       UNION SELECT name, 'Staff' AS type FROM staff WHERE LOWER(name) LIKE ?
+       LIMIT 5`, [like, like, like]
+    );
+    context.topic = 'search';
+    context.rows = found;
+
+    if (found.length) {
+      context.legacyAnswer = `I found these matches for your query:\n` + found.map((row) => `- **${row.name}** (${row.type})`).join('\n');
+    } else {
+      context.legacyAnswer = "I couldn't find any matching records. Try asking for a 'pdf of doctors' or 'who is on leave'.";
+    }
+  }
+
+  return context;
+}
+
+function buildAiChatPrompt(context) {
+  return [
+    'You are the SkyCare hospital assistant.',
+    'Answer only from the provided database context.',
+    'If the context does not contain enough information, say that clearly.',
+    'Keep the response concise, helpful, and formatted in Markdown when useful.',
+    '',
+    `User query: ${context.query}`,
+    `Context: ${JSON.stringify({
+      topic: context.topic,
+      title: context.title,
+      matchedDept: context.matchedDept || null,
+      isPdf: context.isPdf,
+      rows: compactRows(context.rows, Object.keys((context.rows && context.rows[0]) || {}), 8)
+    }, null, 2)}`
+  ].join('\n');
 }
 
 // ═══════════════════════════════════════════
@@ -351,32 +731,23 @@ app.get('/api/dashboard', auth, can('dashboard', 'read'), async (req, res) => {
 
 app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
   try {
-    const totalPatients = (await fetchOne('SELECT COUNT(*) AS c FROM patients'))?.c || 0;
-    const totalDoctors = (await fetchOne("SELECT COUNT(*) AS c FROM doctors WHERE status = 'Active'"))?.c || 0;
-    const availableRooms = (await fetchOne("SELECT COUNT(*) AS c FROM rooms WHERE status = 'Available'"))?.c || 0;
-    const totalRooms = (await fetchOne('SELECT COUNT(*) AS c FROM rooms'))?.c || 0;
-    const activeAdmissions = (await fetchOne("SELECT COUNT(*) AS c FROM admissions WHERE status = 'Admitted'"))?.c || 0;
-    const pendingBills = (await fetchOne("SELECT COUNT(*) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
-    const totalBillsVal = (await fetchOne("SELECT SUM(total_amount - paid_amount) AS c FROM billing WHERE status IN ('Pending', 'Partial')"))?.c || 0;
+    const context = await getDashboardAiContext();
+    let summary = buildLegacyDashboardSummary(context);
 
-    const occupancyRate = totalRooms > 0 ? Math.round((totalRooms - availableRooms) / totalRooms * 100) : 0;
-    
-    let summary = `**Hospital Executive Summary:**\n\n`;
-    summary += `Currently, the hospital is operating at **${occupancyRate}%** room capacity, with **${activeAdmissions}** active admissions and **${availableRooms}** rooms available for new patients.\n\n`;
-    summary += `We have **${totalDoctors}** active doctors serving a total registered patient base of **${totalPatients}**.\n\n`;
-    
-    if (pendingBills > 0) {
-      summary += `**Financial Alert:** There are ${pendingBills} pending bills totaling approximately ৳${Number(totalBillsVal).toLocaleString()}, which may require follow-up.\n\n`;
-    } else {
-      summary += `**Financial Status:** All billing appears to be up to date with no pending invoices.\n\n`;
+    if (geminiConfigured) {
+      try {
+        summary = await callGemini({
+          systemInstruction: 'You are the SkyCare hospital operations assistant. Use only the provided database context and do not invent facts.',
+          prompt: buildDashboardGeminiPrompt(context),
+          temperature: 0.2,
+          maxOutputTokens: 512
+        });
+      } catch (modelError) {
+        console.warn('[SkyCare] Gemini summary request failed:', modelError.message);
+      }
     }
-    
-    summary += `*Recommendation:* ${occupancyRate > 80 ? 'High occupancy detected. Consider expediting discharges and preparing emergency overflow beds.' : 'Occupancy is stable. Normal operations can continue.'}`;
 
-    // Simulate AI thinking delay for UX
-    await new Promise(r => setTimeout(r, 1200));
-
-    res.json({ summary });
+    res.json({ summary, source: geminiConfigured ? 'gemini' : 'fallback' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -384,112 +755,31 @@ app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
 
 app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
-    const query = (req.body.query || '').toLowerCase();
-    let answer = '';
-    let pdfData = null;
+    const context = await buildAiChatContext(req.body.query || '');
 
-    const isPdf = query.match(/pdf|report|download|print/);
+    if (context.pdfData) {
+      return res.json({
+        answer: context.legacyAnswer,
+        pdfData: context.pdfData,
+        source: 'database'
+      });
+    }
 
-    // Fetch departments for keyword matching
-    const [departments] = await db.query("SELECT name FROM departments");
-    const matchedDept = departments.map(d => d.name.toLowerCase()).find(d => query.includes(d));
-
-    if (query.match(/doctor|doc|physician|surgeon/)) {
-      let sql = "SELECT name, status, phone, email, specialization, department_name FROM doctors";
-      let title = "Doctors List";
-      let params = [];
-      if (matchedDept) {
-        sql += " WHERE LOWER(department_name) LIKE ?";
-        params.push(`%${matchedDept}%`);
-        title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
-      } else if (query.match(/leave|inactive|absent/)) {
-        sql += " WHERE status = 'On Leave'";
-        title = "Doctors on Leave";
-      }
-      
-      const [rows] = await db.query(sql, params);
-      
-      if (isPdf) {
-        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'department_name',label:'Department'}, {key:'specialization',label:'Specialty'}, {key:'phone',label:'Phone'}, {key:'status',label:'Status'}], rows };
-        answer = `I have generated the PDF report for **${title}**. It should download automatically.`;
-      } else {
-        if (rows.length === 0) answer = `I couldn't find any doctors matching that criteria.`;
-        else if (query.match(/name|list|who|all/) || matchedDept) answer = `Here are the matching doctors:\n` + rows.map(r=>`- **${r.name}** (${r.department_name || 'No Dept'})`).join('\n');
-        else answer = `We have **${rows.length}** matching doctors. Ask me to "list them" or "make a pdf".`;
-      }
-    } 
-    else if (query.match(/patient|pat|sick/)) {
-      let sql = "SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC";
-      let title = "Patients List";
-      if (query.match(/active/)) { sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active'"; title = "Active Patients"; }
-      const [rows] = await db.query(sql);
-      
-      if (isPdf) {
-        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'blood_group',label:'Blood Group'}, {key:'gender',label:'Gender'}, {key:'phone',label:'Phone'}], rows };
-        answer = `I have generated the PDF report for **${title}**.`;
-      } else {
-        if (query.match(/name|list|who|all/)) answer = `Here are some patients:\n` + rows.slice(0,10).map(r=>`- **${r.name}**`).join('\n');
-        else answer = `We have **${rows.length}** registered patients. You can ask me to "make a pdf".`;
-      }
-    }
-    else if (query.match(/staff|nurse/)) {
-      let sql = "SELECT name, role, phone, status FROM staff";
-      let title = "Staff List";
-      if (query.match(/leave/)) { sql += " WHERE status = 'On Leave'"; title = "Staff on Leave"; }
-      const [rows] = await db.query(sql);
-      
-      if (isPdf) {
-        pdfData = { title, columns: [{key:'name',label:'Name'}, {key:'role',label:'Role'}, {key:'phone',label:'Phone'}, {key:'status',label:'Status'}], rows };
-        answer = `I have generated the PDF report for **${title}**.`;
-      } else {
-        if (query.match(/name|list|who/)) answer = `Here is our staff:\n` + rows.map(r=>`- **${r.name}** (${r.role})`).join('\n');
-        else answer = `We have **${rows.length}** staff members.`;
-      }
-    }
-    else if (query.match(/room|bed|capacity/)) {
-      const [rows] = await db.query("SELECT room_number, type, status FROM rooms");
-      if (isPdf) {
-        pdfData = { title: "Rooms Report", columns: [{key:'room_number',label:'Room'}, {key:'type',label:'Type'}, {key:'status',label:'Status'}], rows };
-        answer = `I have generated the Rooms PDF report.`;
-      } else {
-        if (query.match(/available|empty|free/)) {
-          const avail = rows.filter(r => r.status === 'Available');
-          answer = `Available rooms:\n` + avail.map(r=>`- Room **${r.room_number}** (${r.type})`).join('\n');
-        } else {
-          answer = `There are **${rows.filter(r => r.status === 'Available').length}** out of ${rows.length} rooms available.`;
-        }
-      }
-    }
-    else if (query.match(/bill|money|finance|pending/)) {
-      const [rows] = await db.query("SELECT p.name as patient, b.total_amount, b.paid_amount, b.status FROM billing b JOIN patients p ON b.patient_id = p.id WHERE b.status IN ('Pending', 'Partial')");
-      if (isPdf) {
-        pdfData = { title: "Pending Bills", columns: [{key:'patient',label:'Patient'}, {key:'total_amount',label:'Total'}, {key:'paid_amount',label:'Paid'}, {key:'status',label:'Status'}], rows };
-        answer = `I have generated the Pending Bills PDF report.`;
-      } else {
-        if (rows.length) answer = `We have ${rows.length} pending bills:\n` + rows.map(r=>`- **${r.patient}**: Owed ৳${r.total_amount - r.paid_amount}`).join('\n');
-        else answer = "There are currently no pending bills.";
-      }
-    }
-    else if (query.match(/hi|hello|hey/)) {
-      answer = "Hello! I am your AI Assistant. I can now fetch filtered lists and generate PDFs! Try asking me: 'medicine doctors pdf' or 'list available rooms'.";
-    } 
-    else {
-      const like = `%${query}%`;
-      const [found] = await db.query(
-        `SELECT name, 'Doctor' AS type FROM doctors WHERE LOWER(name) LIKE ?
-         UNION SELECT name, 'Patient' AS type FROM patients WHERE LOWER(name) LIKE ?
-         UNION SELECT name, 'Staff' AS type FROM staff WHERE LOWER(name) LIKE ?
-         LIMIT 5`, [like, like, like]
-      );
-      if (found.length) {
-        answer = `I found these matches for your query:\n` + found.map(r => `- **${r.name}** (${r.type})`).join('\n');
-      } else {
-        answer = "I couldn't find any matching records. Try asking for a 'pdf of doctors' or 'who is on leave'.";
+    let answer = context.legacyAnswer;
+    if (geminiConfigured) {
+      try {
+        answer = await callGemini({
+          systemInstruction: 'You are the SkyCare hospital assistant. Answer only from the provided database context and never invent records.',
+          prompt: buildAiChatPrompt(context),
+          temperature: 0.25,
+          maxOutputTokens: 512
+        });
+      } catch (modelError) {
+        console.warn('[SkyCare] Gemini chat request failed:', modelError.message);
       }
     }
 
-    await new Promise(r => setTimeout(r, 600)); 
-    res.json({ answer, pdfData });
+    res.json({ answer, pdfData: null, source: geminiConfigured ? 'gemini' : 'fallback' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

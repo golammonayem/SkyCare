@@ -22,6 +22,7 @@ SkyCare is a clean, browser-based hospital management system for handling patien
 - Session-based auth with bcrypt password hashing
 - Admin-only user management and audit logging
 - Profile picture upload through Cloudinary
+- Gemini-backed AI assistant for dashboard summaries and database Q&A
 - Responsive UI with SVG icons and Plus Jakarta Sans typography
 
 ## Tech Stack
@@ -95,6 +96,8 @@ You can override the default bootstrap passwords with these environment variable
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_FOLDER` — defaults to `skycare/avatars`
+- `GEMINI_API_KEY` or `GOOGLE_GEMINI_API_KEY` — enables the AI assistant
+- `GEMINI_MODEL` — optional Gemini model name, defaults to `gemini-1.5-flash`
 
 ## Deployment on Render
 
