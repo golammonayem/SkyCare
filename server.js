@@ -303,6 +303,19 @@ async function getDashboardAiContext() {
   };
 }
 
+async function getCuraDatabaseContext() {
+  const resources = Object.values(AI_RESOURCE_CONFIG);
+  const counts = await Promise.all(resources.map(async ({ table }) => ({
+    table,
+    count: (await fetchOne(`SELECT COUNT(*) AS count FROM ${table}`))?.count || 0
+  })));
+  return {
+    modules: Object.keys(AI_RESOURCE_CONFIG),
+    recordCounts: counts,
+    dashboard: await getDashboardAiContext()
+  };
+}
+
 function buildLegacyDashboardSummary(context) {
   const s = context.stats || {};
   let summary = `**Hospital Executive Summary:**\n\n`;
@@ -342,6 +355,7 @@ async function buildAiChatContext(query) {
     legacyAnswer: '',
     pdfData: null
   };
+  context.website = await getCuraDatabaseContext();
 
   const [departments] = await db.query('SELECT name FROM departments');
   const matchedDept = departments.map((d) => d.name.toLowerCase()).find((name) => lowerQuery.includes(name)) || null;
@@ -365,6 +379,7 @@ async function buildAiChatContext(query) {
 
   if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
     let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
+              doctors.qualification, doctors.experience_years,
                       departments.name AS department_name
                FROM doctors
                LEFT JOIN departments ON doctors.department_id = departments.id`;
@@ -372,7 +387,18 @@ async function buildAiChatContext(query) {
     context.topic = 'doctors';
     context.title = 'Doctors List';
 
-    if (matchedDept) {
+    const isDetailRequest = lowerQuery.match(/info|information|detail|details|about|contact|phone|email|qualification|specialization/);
+    if (isDetailRequest) {
+      const ignoredWords = new Set(['give', 'me', 'info', 'information', 'detail', 'details', 'about', 'contact', 'phone', 'email', 'qualification', 'specialization', 'of', 'the', 'doctor', 'doctors', 'dr', 'tell', 'show']);
+      const nameTokens = lowerQuery.split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !ignoredWords.has(word));
+      context.title = 'Doctor Details';
+      if (nameTokens.length) {
+        sql += ` WHERE ${nameTokens.map(() => 'LOWER(doctors.name) LIKE ?').join(' OR ')}`;
+        params.push(...nameTokens.map((token) => `%${token}%`));
+      } else {
+        sql += ' WHERE 1 = 0';
+      }
+    } else if (matchedDept) {
       sql += ' WHERE LOWER(departments.name) LIKE ?';
       params.push(`%${matchedDept}%`);
       context.title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
@@ -399,6 +425,8 @@ async function buildAiChatContext(query) {
       context.legacyAnswer = `I have generated the PDF report for **${context.title}**. It should download automatically.`;
     } else if (rows.length === 0) {
       context.legacyAnswer = `I couldn't find any doctors matching that criteria.`;
+    } else if (isDetailRequest) {
+      context.legacyAnswer = rows.map((doctor) => `**${doctor.name}**\n- Specialization: ${doctor.specialization || 'Not provided'}\n- Qualification: ${doctor.qualification || 'Not provided'}\n- Experience: ${doctor.experience_years || 0} years\n- Department: ${doctor.department_name || 'Not assigned'}\n- Phone: ${doctor.phone || 'Not provided'}\n- Email: ${doctor.email || 'Not provided'}\n- Status: ${doctor.status}`).join('\n\n');
     } else if (lowerQuery.match(/name|list|who|all/) || matchedDept) {
       context.legacyAnswer = `Here are the matching doctors:\n` + rows.map((row) => `- **${row.name}** (${row.department_name || 'No Dept'})`).join('\n');
     } else {
@@ -551,6 +579,7 @@ function buildAiChatPrompt(context) {
       matchedDept: context.matchedDept || null,
       isPdf: context.isPdf,
       overview: context.overview || null,
+      website: context.website || null,
       rows: compactRows(context.rows, Object.keys((context.rows && context.rows[0]) || {}), 8)
     }, null, 2)}`
   ].join('\n');
