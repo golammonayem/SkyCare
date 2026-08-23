@@ -392,6 +392,7 @@ async function buildAiChatContext(query) {
       const ignoredWords = new Set(['give', 'me', 'info', 'information', 'detail', 'details', 'about', 'contact', 'phone', 'email', 'qualification', 'specialization', 'of', 'the', 'doctor', 'doctors', 'dr', 'tell', 'show']);
       const nameTokens = lowerQuery.split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !ignoredWords.has(word));
       context.title = 'Doctor Details';
+      context.isDetailRequest = true;
       if (nameTokens.length) {
         sql += ` WHERE ${nameTokens.map(() => 'LOWER(doctors.name) LIKE ?').join(' OR ')}`;
         params.push(...nameTokens.map((token) => `%${token}%`));
@@ -910,6 +911,10 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
     }
 
     const context = await buildAiChatContext(query);
+
+    if (context.isDetailRequest) {
+      return res.json({ answer: context.legacyAnswer, pdfData: null, source: 'database' });
+    }
 
     if (context.pdfData) {
       return res.json({
