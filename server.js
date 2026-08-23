@@ -170,7 +170,7 @@ async function callGemini({ systemInstruction, prompt, temperature = 0.2, maxOut
 
 const AI_RESOURCE_CONFIG = {
   departments: { table: 'departments', columns: ['name', 'description', 'head_doctor_id'] },
-  doctors: { table: 'doctors', columns: ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'department_id', 'status'] },
+  doctors: { table: 'doctors', columns: ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'department_id', 'status'] },
   patients: { table: 'patients', columns: ['name', 'date_of_birth', 'gender', 'blood_group', 'phone', 'email', 'address', 'emergency_contact_name', 'emergency_contact_phone'] },
   rooms: { table: 'rooms', columns: ['room_number', 'type', 'floor', 'capacity', 'occupied_beds', 'rate_per_day', 'status'] },
   admissions: { table: 'admissions', columns: ['patient_id', 'room_id', 'doctor_id', 'admit_date', 'discharge_date', 'diagnosis', 'discharge_summary', 'status'] },
@@ -194,12 +194,21 @@ function parseAiAction(text) {
 
 async function interpretAiAction(query) {
   if (!geminiConfigured) return null;
-  const resourceNames = Object.keys(AI_RESOURCE_CONFIG).join(', ');
+  const resourceInfo = Object.entries(AI_RESOURCE_CONFIG).map(([name, config]) =>
+    `${name}: columns=[${config.columns.join(', ')}]`
+  ).join('; ');
   const text = await callGemini({
-    systemInstruction: `You are a command parser for a hospital management system. Return ONLY valid JSON. Identify a database command only when the user clearly asks to create, add, update, edit, delete, or remove a record. Never invent missing required values. Resources: ${resourceNames}. JSON shape: {"action":"create|update|delete|none","resource":"doctors","id":123,"lookup":{"name":"..."},"fields":{}}. For ordinary questions return {"action":"none"}. Use resource names exactly.`,
+    systemInstruction: `You are a command parser for a hospital management system. Return ONLY valid JSON.
+Identify a database command only when the user clearly asks to create, add, update, edit, delete, or remove a record.
+Never invent missing required values. If a required field is missing, set it to null.
+Resources and their columns: ${resourceInfo}.
+Enum values - doctors.status: Active, On Leave, Inactive; doctors.gender: Male, Female, Other; patients.gender: Male, Female, Other; rooms.type: General, Private, ICU, Emergency; rooms.status: Available, Occupied, Maintenance.
+JSON shape: {"action":"create|update|delete|none","resource":"doctors","id":null,"lookup":{"name":"partial or full name"},"fields":{"column":"value"}}.
+For ordinary questions, greetings, or listing requests return {"action":"none"}.
+Use resource names exactly as listed. For update/delete, use "lookup.name" with the person's name if no ID is given.`,
     prompt: `User command: ${query}`,
     temperature: 0,
-    maxOutputTokens: 300
+    maxOutputTokens: 400
   });
   return parseAiAction(text);
 }
@@ -221,7 +230,8 @@ async function executeAiAction(action, user) {
 
   let id = Number(action.id);
   if (!Number.isInteger(id) && action.lookup?.name) {
-    const row = await fetchOne(`SELECT id FROM ${config.table} WHERE name = ? LIMIT 1`, [action.lookup.name]);
+    const lookupName = action.lookup.name.replace(/^dr\.?\s*/i, '').trim();
+    const row = await fetchOne(`SELECT id FROM ${config.table} WHERE LOWER(name) LIKE ? LIMIT 1`, [`%${lookupName.toLowerCase()}%`]);
     id = row?.id;
   }
   if (!Number.isInteger(id)) throw new Error('Please provide an exact record ID or name');
@@ -378,46 +388,79 @@ async function buildAiChatContext(query) {
   }
 
   if (lowerQuery.match(/doctor|doc|physician|surgeon|\bdr\.?\b|doctress/)) {
-    let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
-              doctors.qualification, doctors.experience_years,
+    let sql = `SELECT doctors.id, doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
+              doctors.qualification, doctors.experience_years, doctors.gender,
                       departments.name AS department_name
                FROM doctors
                LEFT JOIN departments ON doctors.department_id = departments.id`;
     let params = [];
+    let whereClauses = [];
     context.topic = 'doctors';
     context.title = 'Doctors List';
 
+    // Gender filtering: "doctress", "female doctor", "male doctor"
+    const isFemaleRequest = lowerQuery.match(/doctress|female doctor|women doctor|lady doctor/);
+    const isMaleRequest = lowerQuery.match(/male doctor|men doctor/);
+    if (isFemaleRequest) {
+      whereClauses.push("doctors.gender = 'Female'");
+      context.title = 'Female Doctors';
+    } else if (isMaleRequest) {
+      whereClauses.push("doctors.gender = 'Male'");
+      context.title = 'Male Doctors';
+    }
+
+    // Temporal queries: "last added", "newest", "most recent", "recently added"
+    const isTemporalRequest = lowerQuery.match(/last added|newest|most recent|recently added|latest/);
+
+    // Count queries: "how many", "total", "count"
+    const isCountRequest = lowerQuery.match(/how many|total number|count of|number of/) && !lowerQuery.match(/name|list|who|all|show/);
+
     const isDetailRequest = lowerQuery.match(/info|information|detail|details|about|contact|phone|email|qualification|specialization/);
     if (isDetailRequest) {
-      const ignoredWords = new Set(['give', 'me', 'info', 'information', 'detail', 'details', 'about', 'contact', 'phone', 'email', 'qualification', 'specialization', 'of', 'the', 'doctor', 'doctors', 'dr', 'tell', 'show']);
+      const ignoredWords = new Set(['give', 'me', 'info', 'information', 'detail', 'details', 'about', 'contact', 'phone', 'email', 'qualification', 'specialization', 'of', 'the', 'doctor', 'doctors', 'dr', 'tell', 'show', 'female', 'male', 'doctress', 'lady', 'women', 'men']);
       const nameTokens = lowerQuery.split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !ignoredWords.has(word));
       context.title = 'Doctor Details';
       context.isDetailRequest = true;
       if (nameTokens.length) {
-        sql += ` WHERE ${nameTokens.map(() => 'LOWER(doctors.name) LIKE ?').join(' OR ')}`;
+        whereClauses.push(`(${nameTokens.map(() => 'LOWER(doctors.name) LIKE ?').join(' OR ')})`);
         params.push(...nameTokens.map((token) => `%${token}%`));
-      } else {
-        sql += ' WHERE 1 = 0';
+      } else if (!isFemaleRequest && !isMaleRequest) {
+        whereClauses.push('1 = 0');
       }
     } else if (matchedDept) {
-      sql += ' WHERE LOWER(departments.name) LIKE ?';
+      whereClauses.push('LOWER(departments.name) LIKE ?');
       params.push(`%${matchedDept}%`);
       context.title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
     } else if (lowerQuery.match(/leave|inactive|absent/)) {
-      sql += " WHERE status = 'On Leave'";
+      whereClauses.push("doctors.status = 'On Leave'");
       context.title = 'Doctors on Leave';
+    }
+
+    if (whereClauses.length) {
+      sql += ` WHERE ${whereClauses.join(' AND ')}`;
+    }
+
+    if (isTemporalRequest) {
+      sql += ' ORDER BY doctors.id DESC LIMIT 1';
+      context.title = 'Most Recently Added Doctor';
+    } else {
+      sql += ' ORDER BY doctors.id DESC';
     }
 
     const [rows] = await db.query(sql, params);
     context.rows = rows;
 
-    if (isPdf) {
+    if (isCountRequest) {
+      context.legacyAnswer = `We have **${rows.length}** ${isFemaleRequest ? 'female ' : isMaleRequest ? 'male ' : ''}doctors${matchedDept ? ` in ${matchedDept}` : ''}.`;
+      context.useDirectAnswer = true;
+    } else if (isPdf) {
       context.pdfData = {
         title: context.title,
         columns: [
           { key: 'name', label: 'Name' },
           { key: 'department_name', label: 'Department' },
           { key: 'specialization', label: 'Specialty' },
+          { key: 'gender', label: 'Gender' },
           { key: 'phone', label: 'Phone' },
           { key: 'status', label: 'Status' }
         ],
@@ -425,11 +468,21 @@ async function buildAiChatContext(query) {
       };
       context.legacyAnswer = `I have generated the PDF report for **${context.title}**. It should download automatically.`;
     } else if (rows.length === 0) {
-      context.legacyAnswer = `I couldn't find any doctors matching that criteria.`;
+      if (isFemaleRequest || isMaleRequest) {
+        context.legacyAnswer = `I couldn't find any ${isFemaleRequest ? 'female' : 'male'} doctors. This may be because gender information hasn't been set for the doctors in the system yet. You can update each doctor's gender through the dashboard or ask me to update it.`;
+      } else {
+        context.legacyAnswer = `I couldn't find any doctors matching that criteria.`;
+      }
+      context.useDirectAnswer = true;
+    } else if (isTemporalRequest) {
+      const doc = rows[0];
+      context.legacyAnswer = `The most recently added doctor is:\n\n**${doc.name}**\n- Specialization: ${doc.specialization || 'Not provided'}\n- Department: ${doc.department_name || 'Not assigned'}\n- Gender: ${doc.gender || 'Not set'}\n- Phone: ${doc.phone || 'Not provided'}\n- Email: ${doc.email || 'Not provided'}\n- Status: ${doc.status}`;
+      context.useDirectAnswer = true;
     } else if (isDetailRequest) {
-      context.legacyAnswer = rows.map((doctor) => `**${doctor.name}**\n- Specialization: ${doctor.specialization || 'Not provided'}\n- Qualification: ${doctor.qualification || 'Not provided'}\n- Experience: ${doctor.experience_years || 0} years\n- Department: ${doctor.department_name || 'Not assigned'}\n- Phone: ${doctor.phone || 'Not provided'}\n- Email: ${doctor.email || 'Not provided'}\n- Status: ${doctor.status}`).join('\n\n');
-    } else if (lowerQuery.match(/name|list|who|all/) || matchedDept) {
-      context.legacyAnswer = `Here are the matching doctors:\n` + rows.map((row) => `- **${row.name}** (${row.department_name || 'No Dept'})`).join('\n');
+      context.legacyAnswer = rows.map((doctor) => `**${doctor.name}**\n- Specialization: ${doctor.specialization || 'Not provided'}\n- Qualification: ${doctor.qualification || 'Not provided'}\n- Experience: ${doctor.experience_years || 0} years\n- Department: ${doctor.department_name || 'Not assigned'}\n- Gender: ${doctor.gender || 'Not set'}\n- Phone: ${doctor.phone || 'Not provided'}\n- Email: ${doctor.email || 'Not provided'}\n- Status: ${doctor.status}`).join('\n\n');
+    } else if (lowerQuery.match(/name|list|who|all|doctress/) || matchedDept) {
+      context.legacyAnswer = `Here are the ${context.title.toLowerCase()} (${rows.length} total):\n` + rows.map((row) => `- **${row.name}** (${row.department_name || 'No Dept'})`).join('\n');
+      context.useDirectAnswer = true;
     } else {
       context.legacyAnswer = `We have **${rows.length}** matching doctors. Ask me to \"list them\" or \"make a pdf\".`;
     }
@@ -438,9 +491,16 @@ async function buildAiChatContext(query) {
     let title = 'Patients List';
     context.topic = 'patients';
 
+    const isTemporalPatient = lowerQuery.match(/last added|newest|most recent|recently added|latest/);
+
     if (lowerQuery.match(/active/)) {
-      sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active'";
+      sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active' ORDER BY id DESC";
       title = 'Active Patients';
+    }
+
+    if (isTemporalPatient) {
+      sql = 'SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC LIMIT 1';
+      title = 'Most Recently Added Patient';
     }
 
     const [rows] = await db.query(sql);
@@ -459,19 +519,37 @@ async function buildAiChatContext(query) {
         rows
       };
       context.legacyAnswer = `I have generated the PDF report for **${title}**.`;
+    } else if (isTemporalPatient && rows.length) {
+      const p = rows[0];
+      context.legacyAnswer = `The most recently added patient is: **${p.name}** (${p.gender || 'Gender not set'}, Blood: ${p.blood_group || 'N/A'}, Phone: ${p.phone || 'N/A'})`;
+      context.useDirectAnswer = true;
     } else if (lowerQuery.match(/name|list|who|all/)) {
-      context.legacyAnswer = `Here are some patients:\n` + rows.slice(0, 10).map((row) => `- **${row.name}**`).join('\n');
+      context.legacyAnswer = `Here are the patients (${rows.length} total):\n` + rows.map((row) => `- **${row.name}** (${row.gender || 'N/A'}, ${row.blood_group || 'N/A'})`).join('\n');
+      context.useDirectAnswer = true;
     } else {
-      context.legacyAnswer = `We have **${rows.length}** registered patients. You can ask me to \"make a pdf\".`;
+      context.legacyAnswer = `We have **${rows.length}** registered patients. You can ask me to \"list them\" or \"make a pdf\".`;
     }
   } else if (lowerQuery.match(/staff|nurse/)) {
-    let sql = 'SELECT name, role, phone, status FROM staff';
+    let sql = 'SELECT name, role, phone, status FROM staff ORDER BY id DESC';
     let title = 'Staff List';
     context.topic = 'staff';
 
+    const isTemporalStaff = lowerQuery.match(/last added|newest|most recent|recently added|latest/);
+    const isNurseRequest = lowerQuery.match(/nurse/);
+
+    if (isNurseRequest) {
+      sql = "SELECT name, role, phone, status FROM staff WHERE LOWER(role) LIKE '%nurse%' ORDER BY id DESC";
+      title = 'Nurses';
+    }
+
     if (lowerQuery.match(/leave/)) {
-      sql += " WHERE status = 'On Leave'";
+      sql = "SELECT name, role, phone, status FROM staff WHERE status = 'On Leave' ORDER BY id DESC";
       title = 'Staff on Leave';
+    }
+
+    if (isTemporalStaff) {
+      sql = 'SELECT name, role, phone, status FROM staff ORDER BY id DESC LIMIT 1';
+      title = 'Most Recently Added Staff';
     }
 
     const [rows] = await db.query(sql);
@@ -490,8 +568,13 @@ async function buildAiChatContext(query) {
         rows
       };
       context.legacyAnswer = `I have generated the PDF report for **${title}**.`;
-    } else if (lowerQuery.match(/name|list|who/)) {
-      context.legacyAnswer = `Here is our staff:\n` + rows.map((row) => `- **${row.name}** (${row.role})`).join('\n');
+    } else if (isTemporalStaff && rows.length) {
+      const s = rows[0];
+      context.legacyAnswer = `The most recently added staff member is: **${s.name}** (${s.role}, Phone: ${s.phone || 'N/A'}, Status: ${s.status})`;
+      context.useDirectAnswer = true;
+    } else if (lowerQuery.match(/name|list|who|all|nurse/)) {
+      context.legacyAnswer = `Here is the ${title.toLowerCase()} (${rows.length} total):\n` + rows.map((row) => `- **${row.name}** (${row.role})`).join('\n');
+      context.useDirectAnswer = true;
     } else {
       context.legacyAnswer = `We have **${rows.length}** staff members.`;
     }
@@ -565,25 +648,46 @@ async function buildAiChatContext(query) {
   return context;
 }
 
-function buildAiChatPrompt(context) {
-  return [
+function buildAiChatPrompt(context, history) {
+  const parts = [
     CURA_SYSTEM,
-    'Answer only from the provided database context.',
-    'If the context does not contain enough information, say that clearly.',
-    'Keep the response concise, helpful, and formatted in Markdown when useful.',
     '',
-    `User query: ${context.query}`,
-    'Website capabilities: CURA can read live information and, for Admin users, create, update, or delete records through protected SkyCare workflows. Destructive actions require confirmation.',
-    `Context: ${JSON.stringify({
-      topic: context.topic,
-      title: context.title,
-      matchedDept: context.matchedDept || null,
-      isPdf: context.isPdf,
-      overview: context.overview || null,
-      website: context.website || null,
-      rows: compactRows(context.rows, Object.keys((context.rows && context.rows[0]) || {}), 8)
-    }, null, 2)}`
-  ].join('\n');
+    'CRITICAL RULES:',
+    '1. ONLY mention records that appear in the provided "rows" data below. Do NOT invent, guess, or hallucinate any names, numbers, or records that are not in the data.',
+    '2. If the data contains 0 rows, say you found no matching records.',
+    '3. Answer only from the provided database context.',
+    '4. If the context does not contain enough information, say that clearly.',
+    '5. Keep the response concise, helpful, and formatted in Markdown when useful.',
+    '6. When listing records, include ALL records from the rows data, do not skip any.',
+    ''
+  ];
+
+  // Add conversation history for multi-turn context
+  if (history && history.length > 0) {
+    parts.push('Previous conversation:');
+    for (const msg of history.slice(-10)) {
+      parts.push(`${msg.role === 'user' ? 'User' : 'CURA'}: ${msg.text}`);
+    }
+    parts.push('');
+  }
+
+  parts.push(`User query: ${context.query}`);
+  parts.push('Website capabilities: CURA can read live information and, for Admin users, create, update, or delete records through protected SkyCare workflows. Destructive actions require confirmation.');
+
+  // Send ALL rows to Gemini (no truncation) so it never needs to hallucinate
+  const contextData = {
+    topic: context.topic,
+    title: context.title,
+    matchedDept: context.matchedDept || null,
+    isPdf: context.isPdf,
+    overview: context.overview || null,
+    totalRecords: (context.rows || []).length,
+    rows: context.rows || []
+  };
+
+  parts.push(`Database context: ${JSON.stringify(contextData, null, 2)}`);
+
+  return parts.join('\n');
 }
 
 // ═══════════════════════════════════════════
@@ -892,6 +996,7 @@ app.get('/api/ai-status', auth, can('dashboard', 'read'), async (req, res) => {
 app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
     const query = (req.body.query || '').trim();
+    const history = req.body.history || [];
     let action = req.body.action;
     if (!action) {
       try {
@@ -912,7 +1017,9 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
 
     const context = await buildAiChatContext(query);
 
-    if (context.isDetailRequest) {
+    // For detail requests, PDF exports, and direct-answer queries (lists, counts, temporal),
+    // use the legacyAnswer directly from the database — this prevents Gemini from hallucinating
+    if (context.isDetailRequest || context.useDirectAnswer) {
       return res.json({ answer: context.legacyAnswer, pdfData: null, source: 'database' });
     }
 
@@ -924,14 +1031,15 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
       });
     }
 
+    // For conversational/complex queries, use Gemini with full context and history
     let answer = context.legacyAnswer;
     if (geminiConfigured) {
       try {
         answer = await callGemini({
           systemInstruction: CURA_SYSTEM,
-          prompt: buildAiChatPrompt(context),
+          prompt: buildAiChatPrompt(context, history),
           temperature: 0.25,
-          maxOutputTokens: 512
+          maxOutputTokens: 1024
         });
       } catch (modelError) {
         console.warn('[SkyCare] Gemini chat request failed:', modelError.message);
@@ -1198,7 +1306,7 @@ registerCrud(
 registerCrud(
   'doctors',
   'doctors',
-  ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'department_id', 'status'],
+  ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'department_id', 'status'],
   { select: ', dep.name AS department_name', join: 'LEFT JOIN departments dep ON doctors.department_id = dep.id' }
 );
 

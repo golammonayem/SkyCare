@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS doctors (
   experience_years INT NOT NULL DEFAULT 0,
   phone VARCHAR(40),
   email VARCHAR(190) UNIQUE,
+  gender ENUM('Male','Female','Other'),
   department_id INT,
   status ENUM('Active','On Leave','Inactive') NOT NULL DEFAULT 'Active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -81,6 +81,19 @@ async function initializeDatabase() {
   await db.query('SELECT 1');
   await runStatements(loadSchemaStatements());
 
+  // Migration: Add gender column to doctors if it doesn't exist
+  try {
+    const [cols] = await db.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'doctors' AND COLUMN_NAME = 'gender'"
+    );
+    if (cols.length === 0) {
+      await db.query("ALTER TABLE doctors ADD COLUMN gender ENUM('Male','Female','Other') AFTER email");
+      console.log('[SkyCare] Migration: Added gender column to doctors table');
+    }
+  } catch (migrationError) {
+    console.warn('[SkyCare] Migration warning (gender column):', migrationError.message);
+  }
+
   await seedUsers();
   await resetInsecureDefaultPasswords();
   await seedData();
@@ -150,18 +163,18 @@ async function seedData() {
   }
 
   const doctors = [
-    ['Dr. Ayesha Rahman', 'Cardiologist', 'MBBS, MD Cardiology', 12, '01711000001', 'dr.ayesha@hospital.com', 1, 'Active'],
-    ['Dr. Karim Hossain', 'Neurologist', 'MBBS, MD Neurology', 15, '01711000002', 'karim@hospital.com', 2, 'Active'],
-    ['Dr. Fatima Noor', 'Orthopedic Surgeon', 'MBBS, MS Orthopedics', 10, '01711000003', 'fatima@hospital.com', 3, 'Active'],
-    ['Dr. Rafi Ahmed', 'Pediatrician', 'MBBS, DCH', 8, '01711000004', 'dr.rafi@hospital.com', 4, 'Active'],
-    ['Dr. Nusrat Jahan', 'General Physician', 'MBBS', 5, '01711000005', 'nusrat@hospital.com', 5, 'Active'],
-    ['Dr. Tanvir Islam', 'Emergency Medicine', 'MBBS, FCPS', 14, '01711000006', 'tanvir@hospital.com', 6, 'Active'],
-    ['Dr. Sadia Kabir', 'Cardiologist', 'MBBS, MD Cardiology', 9, '01711000007', 'sadia@hospital.com', 1, 'Active'],
-    ['Dr. Imran Chowdhury', 'Neurologist', 'MBBS, FCPS Neurology', 11, '01711000008', 'imran@hospital.com', 2, 'On Leave']
+    ['Dr. Ayesha Rahman', 'Cardiologist', 'MBBS, MD Cardiology', 12, '01711000001', 'dr.ayesha@hospital.com', 'Female', 1, 'Active'],
+    ['Dr. Karim Hossain', 'Neurologist', 'MBBS, MD Neurology', 15, '01711000002', 'karim@hospital.com', 'Male', 2, 'Active'],
+    ['Dr. Fatima Noor', 'Orthopedic Surgeon', 'MBBS, MS Orthopedics', 10, '01711000003', 'fatima@hospital.com', 'Female', 3, 'Active'],
+    ['Dr. Rafi Ahmed', 'Pediatrician', 'MBBS, DCH', 8, '01711000004', 'dr.rafi@hospital.com', 'Male', 4, 'Active'],
+    ['Dr. Nusrat Jahan', 'General Physician', 'MBBS', 5, '01711000005', 'nusrat@hospital.com', 'Female', 5, 'Active'],
+    ['Dr. Tanvir Islam', 'Emergency Medicine', 'MBBS, FCPS', 14, '01711000006', 'tanvir@hospital.com', 'Male', 6, 'Active'],
+    ['Dr. Sadia Kabir', 'Cardiologist', 'MBBS, MD Cardiology', 9, '01711000007', 'sadia@hospital.com', 'Female', 1, 'Active'],
+    ['Dr. Imran Chowdhury', 'Neurologist', 'MBBS, FCPS Neurology', 11, '01711000008', 'imran@hospital.com', 'Male', 2, 'On Leave']
   ];
   for (const doctor of doctors) {
     await db.query(
-      'INSERT INTO doctors (name, specialization, qualification, experience_years, phone, email, department_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO doctors (name, specialization, qualification, experience_years, phone, email, gender, department_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       doctor
     );
   }

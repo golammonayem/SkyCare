@@ -163,9 +163,13 @@ async function renderDashboard() {
   } catch (e) { showToast('Failed to load dashboard: ' + e.message, 'error'); }
 }
 
+// Conversation history for CURA multi-turn context
+let curaChatHistory = [];
+
 function closeAiSidebar() {
   document.getElementById('aiSidebar').classList.remove('active');
   document.getElementById('aiSidebarOverlay').classList.remove('active');
+  curaChatHistory = [];
 }
 
 function setAiStatus(mode, label) {
@@ -191,6 +195,7 @@ function setAiStatus(mode, label) {
 }
 
 async function generateAiSummary() {
+  curaChatHistory = [];
   document.getElementById('aiSidebar').classList.add('active');
   document.getElementById('aiSidebarOverlay').classList.add('active');
   setAiStatus('loading', 'Checking Gemini...');
@@ -231,6 +236,7 @@ async function sendAiQuery() {
   if(!query) return;
   
   appendUserMessage(query);
+  curaChatHistory.push({ role: 'user', text: query });
   input.value = '';
   input.disabled = true;
   btn.disabled = true;
@@ -239,19 +245,31 @@ async function sendAiQuery() {
   setAiStatus('loading', 'Checking Gemini...');
   
   try {
-    const data = await API.post('/api/ai-chat', { query });
+    const data = await API.post('/api/ai-chat', { query, history: curaChatHistory.slice(-10) });
     document.getElementById(loadingId).remove();
     setAiStatus(data.source === 'gemini' ? 'gemini' : 'fallback', data.source === 'gemini' ? 'Gemini active' : 'Fallback mode');
     appendAiMessage(data.answer);
+    curaChatHistory.push({ role: 'ai', text: data.answer });
 
     if (data.needsConfirmation && data.action) {
       const confirmed = await confirmAction(`Confirm deleting this ${data.action.resource} record?`);
       if (confirmed) {
         const result = await API.post('/api/ai-chat', { query, action: data.action, confirmed: true });
         appendAiMessage(result.answer);
+        curaChatHistory.push({ role: 'ai', text: result.answer });
+        // Auto-refresh dashboard after mutation
+        if (result.actionResult && typeof loadPage === 'function') {
+          loadPage(window.currentPage || 'dashboard');
+        }
       } else {
         appendAiMessage('Deletion cancelled.');
+        curaChatHistory.push({ role: 'ai', text: 'Deletion cancelled.' });
       }
+    }
+
+    // Auto-refresh dashboard after create/update actions
+    if (data.actionResult && typeof loadPage === 'function') {
+      loadPage(window.currentPage || 'dashboard');
     }
     
     if (data.pdfData) {
