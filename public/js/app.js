@@ -263,6 +263,30 @@ function closeMobileSidebar() {
   document.body.style.overflow = '';
 }
 
+/* ── Sidebar Pinning ── */
+function toggleSidebarPin() {
+  const isPinned = document.body.classList.toggle('sidebar-pinned');
+  localStorage.setItem('skycare_sidebar_pinned', isPinned ? 'true' : 'false');
+  const btn = document.getElementById('pinSidebarBtn');
+  if (btn) {
+    btn.innerHTML = isPinned
+      ? '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.74L9.6 15h4.8l.6-4.26a2 2 0 0 1 2-1.98V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4.5a2 2 0 0 1 2 1.98z"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.74L9.6 15h4.8l.6-4.26a2 2 0 0 1 2-1.98V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4.5a2 2 0 0 1 2 1.98z"/></svg>';
+  }
+}
+
+function initSidebarPin() {
+  const isPinned = localStorage.getItem('skycare_sidebar_pinned') === 'true';
+  if (isPinned) {
+    document.body.classList.add('sidebar-pinned');
+    const btn = document.getElementById('pinSidebarBtn');
+    if (btn) {
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.74L9.6 15h4.8l.6-4.26a2 2 0 0 1 2-1.98V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4.5a2 2 0 0 1 2 1.98z"/></svg>';
+    }
+  }
+}
+
+
 /* ── Self Password Change ── */
 function toggleModalPassword(inputId, buttonEl) {
   const input = document.getElementById(inputId);
@@ -345,6 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await Auth.loadPermissions();
   setupUserProfile();
   setupSidebarPermissions();
+  initSidebarPin();
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => { e.preventDefault(); window.location.hash = item.dataset.page; });
