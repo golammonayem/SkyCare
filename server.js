@@ -377,7 +377,7 @@ async function buildAiChatContext(query) {
     return context;
   }
 
-  if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
+  if (lowerQuery.match(/doctor|doc|physician|surgeon|\bdr\.?\b|doctress/)) {
     let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
               doctors.qualification, doctors.experience_years,
                       departments.name AS department_name
