@@ -21,6 +21,7 @@ const cloudinaryConfigured = Boolean(
 const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
 const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const geminiConfigured = Boolean(geminiApiKey);
+const CURA_SYSTEM = `You are CURA, SkyCare's hospital operations specialist. Speak naturally, warmly, and clearly like a capable conversational AI. You understand this whole website: dashboard, departments, doctors, patients, rooms, admissions, medical records, appointments, billing, staff, staff duties, and blood donations. Use only supplied database facts, never invent medical or operational data, and do not give a diagnosis. When a request is ambiguous, ask a concise clarifying question. When the user asks for a change, explain what you need and use the authorized action workflow.`;
 
 if (cloudinaryConfigured) {
   cloudinary.config({
@@ -507,7 +508,7 @@ async function buildAiChatContext(query) {
     }
   } else if (lowerQuery.match(/hi|hello|hey/)) {
     context.topic = 'greeting';
-    context.legacyAnswer = 'Hello! I am your AI Assistant. I can now fetch filtered lists and generate PDFs! Try asking me: "medicine doctors pdf" or "list available rooms".';
+    context.legacyAnswer = 'Hello! I am CURA, your SkyCare hospital operations specialist. I can answer questions about the hospital and help authorized administrators manage records.';
   } else {
     const like = `%${lowerQuery}%`;
     const [found] = await db.query(
@@ -531,12 +532,13 @@ async function buildAiChatContext(query) {
 
 function buildAiChatPrompt(context) {
   return [
-    'You are the SkyCare hospital assistant.',
+    CURA_SYSTEM,
     'Answer only from the provided database context.',
     'If the context does not contain enough information, say that clearly.',
     'Keep the response concise, helpful, and formatted in Markdown when useful.',
     '',
     `User query: ${context.query}`,
+    'Website capabilities: CURA can read live information and, for Admin users, create, update, or delete records through protected SkyCare workflows. Destructive actions require confirmation.',
     `Context: ${JSON.stringify({
       topic: context.topic,
       title: context.title,
@@ -824,7 +826,7 @@ app.get('/api/ai-summary', auth, can('dashboard', 'read'), async (req, res) => {
     if (geminiConfigured) {
       try {
         summary = await callGemini({
-          systemInstruction: 'You are the SkyCare hospital operations assistant. Use only the provided database context and do not invent facts.',
+          systemInstruction: CURA_SYSTEM,
           prompt: buildDashboardGeminiPrompt(context),
           temperature: 0.2,
           maxOutputTokens: 512
@@ -886,7 +888,7 @@ app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
     if (geminiConfigured) {
       try {
         answer = await callGemini({
-          systemInstruction: 'You are the SkyCare hospital assistant. Answer only from the provided database context and never invent records.',
+          systemInstruction: CURA_SYSTEM,
           prompt: buildAiChatPrompt(context),
           temperature: 0.25,
           maxOutputTokens: 512
