@@ -243,6 +243,16 @@ async function sendAiQuery() {
     document.getElementById(loadingId).remove();
     setAiStatus(data.source === 'gemini' ? 'gemini' : 'fallback', data.source === 'gemini' ? 'Gemini active' : 'Fallback mode');
     appendAiMessage(data.answer);
+
+    if (data.needsConfirmation && data.action) {
+      const confirmed = await confirmAction(`Confirm deleting this ${data.action.resource} record?`);
+      if (confirmed) {
+        const result = await API.post('/api/ai-chat', { query, action: data.action, confirmed: true });
+        appendAiMessage(result.answer);
+      } else {
+        appendAiMessage('Deletion cancelled.');
+      }
+    }
     
     if (data.pdfData) {
       if (typeof downloadReportPdf === 'function') {

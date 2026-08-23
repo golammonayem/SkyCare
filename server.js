@@ -167,6 +167,79 @@ async function callGemini({ systemInstruction, prompt, temperature = 0.2, maxOut
   return extractGeminiText(response);
 }
 
+const AI_RESOURCE_CONFIG = {
+  departments: { table: 'departments', columns: ['name', 'description', 'head_doctor_id'] },
+  doctors: { table: 'doctors', columns: ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'department_id', 'status'] },
+  patients: { table: 'patients', columns: ['name', 'date_of_birth', 'gender', 'blood_group', 'phone', 'email', 'address', 'emergency_contact_name', 'emergency_contact_phone'] },
+  rooms: { table: 'rooms', columns: ['room_number', 'type', 'floor', 'capacity', 'occupied_beds', 'rate_per_day', 'status'] },
+  admissions: { table: 'admissions', columns: ['patient_id', 'room_id', 'doctor_id', 'admit_date', 'discharge_date', 'diagnosis', 'discharge_summary', 'status'] },
+  'medical-records': { table: 'medical_records', columns: ['patient_id', 'doctor_id', 'record_date', 'diagnosis', 'treatment', 'prescription', 'notes'] },
+  appointments: { table: 'appointments', columns: ['patient_id', 'doctor_id', 'appointment_date', 'appointment_time', 'status', 'reason'] },
+  billing: { table: 'billing', columns: ['patient_id', 'admission_id', 'total_amount', 'paid_amount', 'payment_method', 'status', 'billing_date', 'due_date', 'description'] },
+  staff: { table: 'staff', columns: ['name', 'role', 'department_id', 'phone', 'email', 'hire_date', 'status'] },
+  'staff-duties': { table: 'staff_duties', columns: ['staff_id', 'shift', 'day_of_week', 'assigned_area'] },
+  'blood-donations': { table: 'blood_donations', columns: ['donor_name', 'patient_id', 'blood_group', 'units', 'donation_date', 'expiry_date', 'status'] }
+};
+
+function parseAiAction(text) {
+  try {
+    const jsonText = text.trim().replace(/^```json\s*|^```|```$/g, '').trim();
+    const parsed = JSON.parse(jsonText);
+    return parsed.action && parsed.resource ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function interpretAiAction(query) {
+  if (!geminiConfigured) return null;
+  const resourceNames = Object.keys(AI_RESOURCE_CONFIG).join(', ');
+  const text = await callGemini({
+    systemInstruction: `You are a command parser for a hospital management system. Return ONLY valid JSON. Identify a database command only when the user clearly asks to create, add, update, edit, delete, or remove a record. Never invent missing required values. Resources: ${resourceNames}. JSON shape: {"action":"create|update|delete|none","resource":"doctors","id":123,"lookup":{"name":"..."},"fields":{}}. For ordinary questions return {"action":"none"}. Use resource names exactly.`,
+    prompt: `User command: ${query}`,
+    temperature: 0,
+    maxOutputTokens: 300
+  });
+  return parseAiAction(text);
+}
+
+async function executeAiAction(action, user) {
+  const config = AI_RESOURCE_CONFIG[action.resource];
+  if (!config || !['create', 'update', 'delete'].includes(action.action)) throw new Error('Unsupported AI action');
+  if (!roleHasAccess(user.role, action.resource, 'write')) throw new Error(`Your role cannot modify ${action.resource}`);
+
+  if (action.action === 'create') {
+    const fields = action.fields && typeof action.fields === 'object' ? action.fields : {};
+    const keys = config.columns.filter((column) => fields[column] !== undefined && fields[column] !== '');
+    if (!keys.length) throw new Error('No fields provided for the new record');
+    const values = keys.map((key) => fields[key] === '' ? null : fields[key]);
+    const result = await run(`INSERT INTO ${config.table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, values);
+    await logAudit(user.id, 'CREATE', action.resource, result.insertId, JSON.stringify(fields));
+    return { id: result.insertId, message: `${action.resource} record created` };
+  }
+
+  let id = Number(action.id);
+  if (!Number.isInteger(id) && action.lookup?.name) {
+    const row = await fetchOne(`SELECT id FROM ${config.table} WHERE name = ? LIMIT 1`, [action.lookup.name]);
+    id = row?.id;
+  }
+  if (!Number.isInteger(id)) throw new Error('Please provide an exact record ID or name');
+  if (!await fetchOne(`SELECT id FROM ${config.table} WHERE id = ?`, [id])) throw new Error('Record not found');
+
+  if (action.action === 'delete') {
+    await run(`DELETE FROM ${config.table} WHERE id = ?`, [id]);
+    await logAudit(user.id, 'DELETE', action.resource, id, 'AI command');
+    return { id, message: `${action.resource} record deleted` };
+  }
+
+  const fields = action.fields && typeof action.fields === 'object' ? action.fields : {};
+  const keys = config.columns.filter((column) => fields[column] !== undefined);
+  if (!keys.length) throw new Error('No fields provided for the update');
+  await run(`UPDATE ${config.table} SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`, [...keys.map((key) => fields[key] === '' ? null : fields[key]), id]);
+  await logAudit(user.id, 'UPDATE', action.resource, id, JSON.stringify(fields));
+  return { id, message: `${action.resource} record updated` };
+}
+
 function compactRows(rows, fields, limit = 6) {
   return (rows || []).slice(0, limit).map((row) => {
     const compactRow = {};
@@ -766,7 +839,26 @@ app.get('/api/ai-status', auth, can('dashboard', 'read'), async (req, res) => {
 
 app.post('/api/ai-chat', auth, can('dashboard', 'read'), async (req, res) => {
   try {
-    const context = await buildAiChatContext(req.body.query || '');
+    const query = (req.body.query || '').trim();
+    let action = req.body.action;
+    if (!action) {
+      try {
+        action = await interpretAiAction(query);
+      } catch (modelError) {
+        console.warn('[SkyCare] Gemini action classification failed:', modelError.message);
+      }
+    }
+    if (action && action.action && action.action !== 'none') {
+      if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin users can use AI to modify records' });
+      if (!AI_RESOURCE_CONFIG[action.resource]) return res.status(400).json({ error: 'Unsupported AI resource' });
+      if (action.action === 'delete' && !req.body.confirmed) {
+        return res.json({ answer: `I found a ${action.resource} record to delete. Please confirm this destructive action.`, action, needsConfirmation: true, source: 'gemini' });
+      }
+      const result = await executeAiAction(action, req.user);
+      return res.json({ answer: result.message, actionResult: result, source: 'gemini' });
+    }
+
+    const context = await buildAiChatContext(query);
 
     if (context.pdfData) {
       return res.json({
