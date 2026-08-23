@@ -393,7 +393,14 @@ async function renderDoctors() {
 
 function buildDoctorsTable(doctors) {
   return buildTable(
-    [{key:'id',label:'ID'},{key:'name',label:'Name'},{key:'specialization',label:'Specialization'},
+    [{key:'id',label:'ID'},
+     {key:'name',label:'Name', render: (v, r) => `<div style="display:flex; align-items:center; gap:8px;">
+       <div style="width:30px; height:30px; border-radius:50%; background:#eee; overflow:hidden; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+         ${r.image_url ? `<img src="${r.image_url}" style="width:100%;height:100%;object-fit:cover;">` : Icon('user', 16)}
+       </div>
+       <span>${v}</span>
+     </div>`},
+     {key:'specialization',label:'Specialization'},
      {key:'department_name',label:'Department'},{key:'phone',label:'Phone'},
      {key:'status',label:'Status',render:v=>statusBadge(v)}],
     doctors,
@@ -411,10 +418,16 @@ function filterDoctors() {
 }
 
 async function showDoctorForm(id) {
-  let doc = {name:'',specialization:'',qualification:'',experience_years:'',phone:'',email:'',department_id:'',status:'Active'};
+  let doc = {name:'',specialization:'',qualification:'',experience_years:'',phone:'',email:'',department_id:'',status:'Active',image_url:''};
   if (id) try { doc = await API.get(`/api/doctors/${id}`); } catch(e) {}
   let depts = []; try { depts = await API.get('/api/departments'); } catch(e) {}
   openModal(id?'Edit Doctor':'Add Doctor', `<form id="docForm">
+    <div style="text-align:center; margin-bottom:15px;">
+      <div style="width:80px; height:80px; border-radius:50%; background:#eee; margin:0 auto 10px; overflow:hidden; border:2px solid var(--border); display:flex; align-items:center; justify-content:center;">
+        ${doc.image_url ? `<img src="${doc.image_url}" style="width:100%; height:100%; object-fit:cover;">` : Icon('user', 40)}
+      </div>
+      <input type="file" id="docAvatarInput" accept="image/*" style="font-size:12px;">
+    </div>
     <div class="form-row"><div class="form-group"><label class="form-label">Name *</label><input name="name" class="form-control" value="${doc.name||''}" required></div>
     <div class="form-group"><label class="form-label">Specialization *</label><input name="specialization" class="form-control" value="${doc.specialization||''}"></div></div>
     <div class="form-row"><div class="form-group"><label class="form-label">Qualification</label><input name="qualification" class="form-control" value="${doc.qualification||''}"></div>
@@ -427,7 +440,38 @@ async function showDoctorForm(id) {
     <div class="form-group"><label class="form-label">Status</label><select name="status" class="form-control">
       ${['Active','On Leave','Inactive'].map(s=>`<option ${doc.status===s?'selected':''}>${s}</option>`).join('')}
     </select></div></div></form>`, async () => {
+    
+    // File upload logic
+    let image_url = doc.image_url;
+    const fileInput = document.getElementById('docAvatarInput');
+    if (fileInput && fileInput.files[0]) {
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]);
+      
+      const uploadBtn = document.getElementById('modalSave');
+      const originalText = uploadBtn.innerHTML;
+      uploadBtn.innerHTML = 'Uploading...';
+      uploadBtn.disabled = true;
+      
+      try {
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + Auth.getToken() },
+          body: formData
+        });
+        if (!uploadRes.ok) throw new Error('Upload failed');
+        const uploadData = await uploadRes.json();
+        image_url = uploadData.imageUrl;
+      } catch (err) {
+        showToast('Image upload failed: ' + err.message, 'error');
+        uploadBtn.innerHTML = originalText;
+        uploadBtn.disabled = false;
+        return;
+      }
+    }
+
     const data = getFormData('docForm');
+    data.image_url = image_url;
     if (!data.name) { showToast('Name is required','error'); return; }
     try { if(id) await API.put(`/api/doctors/${id}`,data); else await API.post('/api/doctors',data);
       closeModal(); showToast(id?'Updated':'Added','success'); renderDoctors(); } catch(e) { showToast(e.message,'error'); }

@@ -13,9 +13,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const cloudinaryConfigured = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_URL ||
+  (process.env.CLOUDINARY_CLOUD_NAME &&
   process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
+  process.env.CLOUDINARY_API_SECRET)
 );
 
 const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
@@ -24,12 +25,14 @@ const geminiConfigured = Boolean(geminiApiKey);
 const CURA_SYSTEM = `You are CURA, SkyCare's hospital operations specialist. Speak naturally, warmly, and clearly like a capable conversational AI. You understand this whole website: dashboard, departments, doctors, patients, rooms, admissions, medical records, appointments, billing, staff, staff duties, and blood donations. Use only supplied database facts, never invent medical or operational data, and do not give a diagnosis. When a request is ambiguous, ask a concise clarifying question. When the user asks for a change, explain what you need and use the authorized action workflow.`;
 
 if (cloudinaryConfigured) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true
-  });
+  if (process.env.CLOUDINARY_CLOUD_NAME) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+      secure: true
+    });
+  }
 } else {
   console.warn('[SkyCare] Cloudinary credentials are missing. Avatar uploads will be unavailable.');
 }
@@ -170,7 +173,7 @@ async function callGemini({ systemInstruction, prompt, temperature = 0.2, maxOut
 
 const AI_RESOURCE_CONFIG = {
   departments: { table: 'departments', columns: ['name', 'description', 'head_doctor_id'] },
-  doctors: { table: 'doctors', columns: ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'department_id', 'status'] },
+  doctors: { table: 'doctors', columns: ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'image_url', 'department_id', 'status'] },
   patients: { table: 'patients', columns: ['name', 'date_of_birth', 'gender', 'blood_group', 'phone', 'email', 'address', 'emergency_contact_name', 'emergency_contact_phone'] },
   rooms: { table: 'rooms', columns: ['room_number', 'type', 'floor', 'capacity', 'occupied_beds', 'rate_per_day', 'status'] },
   admissions: { table: 'admissions', columns: ['patient_id', 'room_id', 'doctor_id', 'admit_date', 'discharge_date', 'diagnosis', 'discharge_summary', 'status'] },
@@ -1214,6 +1217,28 @@ app.get('/api/audit-log', auth, can('audit-log', 'read'), async (req, res) => {
   }
 });
 
+app.post('/api/upload', auth, upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided' });
+  }
+
+  try {
+    let imageUrl;
+    if (cloudinaryConfigured) {
+      const result = await uploadAvatarToCloudinary(req.file.buffer, req.user.id);
+      imageUrl = result.secure_url;
+    } else {
+      const fs = require('fs');
+      const filename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const filepath = path.join(__dirname, 'public', 'uploads', filename);
+      fs.writeFileSync(filepath, req.file.buffer);
+      imageUrl = `/uploads/${filename}`;
+    }
+    res.json({ imageUrl });
+  } catch (error) {
+    res.status(500).json({ error: 'Upload failed: ' + error.message });
+  }
+});
 // ═══════════════════════════════════════════
 // GENERIC CRUD FACTORY
 // ═══════════════════════════════════════════
@@ -1315,7 +1340,7 @@ registerCrud(
 registerCrud(
   'doctors',
   'doctors',
-  ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'department_id', 'status'],
+  ['name', 'specialization', 'qualification', 'experience_years', 'phone', 'email', 'gender', 'image_url', 'department_id', 'status'],
   { select: ', dep.name AS department_name', join: 'LEFT JOIN departments dep ON doctors.department_id = dep.id' }
 );
 

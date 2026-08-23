@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS doctors (
   phone VARCHAR(40),
   email VARCHAR(190) UNIQUE,
   gender ENUM('Male','Female','Other'),
+  image_url VARCHAR(255),
   department_id INT,
   status ENUM('Active','On Leave','Inactive') NOT NULL DEFAULT 'Active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

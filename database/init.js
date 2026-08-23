@@ -90,8 +90,17 @@ async function initializeDatabase() {
       await db.query("ALTER TABLE doctors ADD COLUMN gender ENUM('Male','Female','Other') AFTER email");
       console.log('[SkyCare] Migration: Added gender column to doctors table');
     }
+
+    // Migration: Add image_url column to doctors
+    const [imgCols] = await db.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'doctors' AND COLUMN_NAME = 'image_url'"
+    );
+    if (imgCols.length === 0) {
+      await db.query("ALTER TABLE doctors ADD COLUMN image_url VARCHAR(255) AFTER gender");
+      console.log('[SkyCare] Migration: Added image_url column to doctors table');
+    }
   } catch (migrationError) {
-    console.warn('[SkyCare] Migration warning (gender column):', migrationError.message);
+    console.warn('[SkyCare] Migration warning (doctors columns):', migrationError.message);
   }
 
   await seedUsers();
