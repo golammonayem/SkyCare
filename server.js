@@ -431,9 +431,12 @@ async function buildAiChatContext(query) {
       whereClauses.push('LOWER(departments.name) LIKE ?');
       params.push(`%${matchedDept}%`);
       context.title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
-    } else if (lowerQuery.match(/leave|inactive|absent/)) {
+    } else if (lowerQuery.match(/leave|absent/)) {
       whereClauses.push("doctors.status = 'On Leave'");
       context.title = 'Doctors on Leave';
+    } else if (lowerQuery.match(/inactive/)) {
+      whereClauses.push("doctors.status = 'Inactive'");
+      context.title = 'Inactive Doctors';
     }
 
     if (whereClauses.length) {
@@ -545,9 +548,12 @@ async function buildAiChatContext(query) {
       title = 'Nurses';
     }
 
-    if (lowerQuery.match(/leave/)) {
+    if (lowerQuery.match(/leave|absent/)) {
       sql = "SELECT name, role, phone, status FROM staff WHERE status = 'On Leave' ORDER BY id DESC";
       title = 'Staff on Leave';
+    } else if (lowerQuery.match(/inactive/)) {
+      sql = "SELECT name, role, phone, status FROM staff WHERE status = 'Inactive' ORDER BY id DESC";
+      title = 'Inactive Staff';
     }
 
     if (isTemporalStaff) {
