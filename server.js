@@ -347,13 +347,16 @@ async function buildAiChatContext(query) {
   context.matchedDept = matchedDept;
 
   if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
-    let sql = 'SELECT name, status, phone, email, specialization, department_name FROM doctors';
+    let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
+                      departments.name AS department_name
+               FROM doctors
+               LEFT JOIN departments ON doctors.department_id = departments.id`;
     let params = [];
     context.topic = 'doctors';
     context.title = 'Doctors List';
 
     if (matchedDept) {
-      sql += ' WHERE LOWER(department_name) LIKE ?';
+      sql += ' WHERE LOWER(departments.name) LIKE ?';
       params.push(`%${matchedDept}%`);
       context.title = `${matchedDept.charAt(0).toUpperCase() + matchedDept.slice(1)} Doctors`;
     } else if (lowerQuery.match(/leave|inactive|absent/)) {

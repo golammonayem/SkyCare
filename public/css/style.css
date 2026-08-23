@@ -664,7 +664,7 @@ textarea.form-control { min-height:76px; resize:vertical; }
 .ai-status { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:var(--radius-full); font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; border:1px solid transparent; }
 .ai-status::before { content:''; width:7px; height:7px; border-radius:999px; background:currentColor; opacity:0.95; }
 .ai-status-loading { background:var(--bg-hover); color:var(--text-muted); border-color:var(--border); }
-.ai-status-gemini { background:rgba(37,99,235,0.12); color:#2563eb; border-color:rgba(37,99,235,0.25); }
+.ai-status-gemini { background:rgba(22,163,74,0.12); color:#15803d; border-color:rgba(22,163,74,0.28); }
 .ai-status-fallback { background:rgba(234,179,8,0.14); color:#b45309; border-color:rgba(234,179,8,0.28); }
 .ai-close { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:4px; transition:all 0.2s; }
 .ai-close:hover { background:var(--bg-hover); color:var(--text-primary); }
