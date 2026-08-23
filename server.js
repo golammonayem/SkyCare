@@ -487,19 +487,22 @@ async function buildAiChatContext(query) {
       context.legacyAnswer = `We have **${rows.length}** matching doctors. Ask me to \"list them\" or \"make a pdf\".`;
     }
   } else if (lowerQuery.match(/patient|pat|sick/)) {
-    let sql = 'SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC';
+    let sql = 'SELECT name, phone, blood_group, gender FROM patients ORDER BY id DESC';
     let title = 'Patients List';
     context.topic = 'patients';
 
     const isTemporalPatient = lowerQuery.match(/last added|newest|most recent|recently added|latest/);
 
     if (lowerQuery.match(/active/)) {
-      sql = "SELECT name, phone, blood_group, gender, status FROM patients WHERE status = 'Active' ORDER BY id DESC";
-      title = 'Active Patients';
+      // Since patients don't have a status column, we'll just return all patients for "active"
+      // Alternatively, we could join with admissions if we wanted currently admitted patients.
+      // For now, let's just return all patients.
+      sql = "SELECT name, phone, blood_group, gender FROM patients ORDER BY id DESC";
+      title = 'All Patients';
     }
 
     if (isTemporalPatient) {
-      sql = 'SELECT name, phone, blood_group, gender, status FROM patients ORDER BY id DESC LIMIT 1';
+      sql = 'SELECT name, phone, blood_group, gender FROM patients ORDER BY id DESC LIMIT 1';
       title = 'Most Recently Added Patient';
     }
 
