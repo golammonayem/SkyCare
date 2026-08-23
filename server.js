@@ -346,6 +346,16 @@ async function buildAiChatContext(query) {
   const matchedDept = departments.map((d) => d.name.toLowerCase()).find((name) => lowerQuery.includes(name)) || null;
   context.matchedDept = matchedDept;
 
+  if (lowerQuery.match(/all info|everything|overview|hospital information|tell me about the hospital/)) {
+    const dashboardContext = await getDashboardAiContext();
+    context.topic = 'overview';
+    context.title = 'Hospital Overview';
+    context.rows = [];
+    context.overview = dashboardContext;
+    context.legacyAnswer = buildLegacyDashboardSummary(dashboardContext);
+    return context;
+  }
+
   if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
     let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
                       departments.name AS department_name
@@ -532,6 +542,7 @@ function buildAiChatPrompt(context) {
       title: context.title,
       matchedDept: context.matchedDept || null,
       isPdf: context.isPdf,
+      overview: context.overview || null,
       rows: compactRows(context.rows, Object.keys((context.rows && context.rows[0]) || {}), 8)
     }, null, 2)}`
   ].join('\n');
