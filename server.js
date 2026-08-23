@@ -1071,7 +1071,7 @@ app.get('/api/global-search', auth, can('dashboard', 'read'), async (req, res) =
     const like = `%${q}%`;
 
     const [doctors] = await db.query(
-      `SELECT id, name, specialization AS detail, phone, email, status, 'doctor' AS type
+      `SELECT id, name, image_url, specialization AS detail, phone, email, status, 'doctor' AS type
        FROM doctors WHERE name LIKE ? OR email LIKE ? OR phone LIKE ? LIMIT 10`, [like, like, like]
     );
     const [patients] = await db.query(

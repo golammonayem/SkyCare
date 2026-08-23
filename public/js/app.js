@@ -87,8 +87,9 @@ function handleGlobalSearch(val) {
       } else {
         box.innerHTML = results.map(r => {
           const initials = (r.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+          const avatarContent = r.image_url ? `<img src="${r.image_url}" style="width:100%;height:100%;object-fit:cover;">` : initials;
           return `<div class="gsr-item" onclick="showPersonProfile('${r.type}', ${r.id})">
-            <div class="gsr-avatar ${r.type}">${initials}</div>
+            <div class="gsr-avatar ${r.type}" style="overflow:hidden;">${avatarContent}</div>
             <div class="gsr-info">
               <div class="gsr-name">${r.name}</div>
               <div class="gsr-detail">${r.detail || ''} ${r.phone ? '• '+r.phone : ''} ${r.email ? '• '+r.email : ''}</div>
@@ -110,7 +111,8 @@ async function showPersonProfile(type, id) {
     if (type === 'doctor') {
       data = await API.get(`/api/doctors/${id}`);
       title = data.name;
-      html = `<div style="text-align:center;margin-bottom:16px;"><div style="width:64px;height:64px;border-radius:50%;background:var(--accent-gradient);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:22px;font-weight:700;">${(data.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2)}</div><h3 style="margin:0;">${data.name}</h3><p style="color:var(--text-muted);font-size:12px;margin-top:2px;">${data.specialization || 'Doctor'}</p></div>
+      const avatarInner = data.image_url ? `<img src="${data.image_url}" style="width:100%;height:100%;object-fit:cover;">` : (data.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2);
+      html = `<div style="text-align:center;margin-bottom:16px;"><div style="width:64px;height:64px;border-radius:50%;background:var(--accent-gradient);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:22px;font-weight:700;overflow:hidden;">${avatarInner}</div><h3 style="margin:0;">${data.name}</h3><p style="color:var(--text-muted);font-size:12px;margin-top:2px;">${data.specialization || 'Doctor'}</p></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group"><label class="form-label">Phone</label><div class="form-control" style="background:var(--bg-body);">${data.phone||'N/A'}</div></div>
           <div class="form-group"><label class="form-label">Email</label><div class="form-control" style="background:var(--bg-body);">${data.email||'N/A'}</div></div>
