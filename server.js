@@ -357,6 +357,12 @@ async function buildAiChatContext(query) {
     return context;
   }
 
+  if (lowerQuery.match(/can you|could you|are you able|if i give|help me/) && lowerQuery.match(/add|create|register/) && lowerQuery.match(/doctor|patient|staff|record/)) {
+    context.topic = 'capability';
+    context.legacyAnswer = 'Yes. I am CURA, and I can help an authorized administrator add that record. Please provide the full details, such as name, specialization, qualification, experience, phone, email, department, and status. I will ask for any required information that is missing before creating it.';
+    return context;
+  }
+
   if (lowerQuery.match(/doctor|doc|physician|surgeon/)) {
     let sql = `SELECT doctors.name, doctors.status, doctors.phone, doctors.email, doctors.specialization,
                       departments.name AS department_name
